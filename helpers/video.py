@@ -8,19 +8,16 @@ import tempfile
 import moviepy.editor as mpe
 
 
-def render_video(env, output):
-    # env = retro.make(game='SonicTheHedgehog-Genesis')
-    env.reset()
-
+def render_video(game_name, step_function, output, max_length, **env_args):
+    env = retro.make(game=game_name, **env_args)
+    obs = env.reset()
     sound = np.array([])
     frames = []
 
-    for _ in range(1000):
-        obs, rew, done, info = env.step(env.action_space.sample())
-
+    for _ in range(max_length):
+        obs, rew, done, info = env.step(step_function(obs))
         sound = np.append(sound, env.em.get_audio()[:, 0])
         frames.append(cv2.cvtColor(obs, cv2.COLOR_RGB2BGR))
-
         if done:
             obs = env.reset()
             break
@@ -36,7 +33,7 @@ def render_video(env, output):
         for frame in frames:
             writer.write(frame)
 
-        sf.write(temp + '/tmp_sound.flac', sound / (max(sound) * 4) , int(rate))
+        sf.write(temp + '/tmp_sound.flac', sound / (max(sound) * 2) , int(rate))
 
         cv2.destroyAllWindows()
         writer.release()

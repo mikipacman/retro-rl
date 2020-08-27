@@ -1,1 +1,6 @@
-roms
+game_data
+.ipynb_checkpoints/
+MortalKombat2/states
+.idea
+*/__pycache__
+__pycache__

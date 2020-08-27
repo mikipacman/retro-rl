@@ -1,0 +1,11 @@
+stable-baselines3
+gym[box2d]
+ipython
+ipykernel
+SoundFile
+opencv-python
+pillow
+moviepy
+gym-retro
+pygame
+sounddevice
