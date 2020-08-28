@@ -10,6 +10,8 @@ from pyglet import gl
 from pyglet.window import key as keycodes
 import numpy as np
 import sounddevice as sd
+from PIL import Image, ImageDraw, ImageFont
+from stable_baselines3.common.atari_wrappers import WarpFrame
 
 
 class Interactive(abc.ABC):
@@ -18,7 +20,7 @@ class Interactive(abc.ABC):
     """
     def __init__(self, env, sync=True, tps=60, width=1000):
         obs = env.reset()
-        self._image = self.get_image(obs, env)
+        self._image = self.get_image(obs, 0, False, {}, env)
         assert len(self._image.shape) == 3 and self._image.shape[2] == 3, 'must be an RGB image'
         image_height, image_width = self._image.shape[:2]
 
@@ -99,7 +101,7 @@ class Interactive(abc.ABC):
 
             if not self._sync or act is not None:
                 obs, rew, done, _info = self._env.step(act)
-                self._image = self.get_image(obs, self._env)
+                self._image = self.get_image(obs, rew, done, _info, self._env)
                 self._steps += 1
 
                 sounds = self._env.em.get_audio()[:, 0]
@@ -134,7 +136,7 @@ class Interactive(abc.ABC):
         sys.exit(0)
 
     @abc.abstractmethod
-    def get_image(self, obs, venv):
+    def get_image(self, obs, rew, done, info, venv):
         pass
 
     @abc.abstractmethod
@@ -170,14 +172,102 @@ class RetroInteractive(Interactive):
     Interactive setup for retro games
     """
 
-    def __init__(self, game, state, scenario, players, width=500):
+    def __init__(self, game, state, scenario, players, width=1200):
         env = retro.make(game=game, state=state, scenario=scenario, players=players)
         self._buttons = env.buttons
         self._players = players
+        self._p1 = {}
+        self._p2 = {}
+        self._width = width
+        self._timesteps = 0
+        self._agent_frames = 0
+        self._cum_rew = np.array([0., 0.])
         super().__init__(env=env, sync=False, tps=60, width=width)
 
-    def get_image(self, _obs, env):
-        return env.render(mode='rgb_array')
+    def get_image(self, obs, rew, done, info, env):
+        skip = 10
+        scale_up = 2.5
+        frame = env.render(mode='rgb_array')
+        real_game_img = Image.fromarray(frame)
+
+        env2 = WarpFrame(env, width=64, height=48)
+        obs = env2.observation(frame[50:200, :, :])
+        obs = obs.reshape(obs.shape[:2])
+        if self._timesteps % skip == 0:
+            agent_img = Image.fromarray(obs, 'L')
+            agent_img = agent_img.resize((int(agent_img.width * scale_up), int(agent_img.height * scale_up)))
+            self._agent_img = agent_img
+            self._agent_frames += 1
+        else:
+            agent_img = self._agent_img
+
+        self._cum_rew += rew
+        info["rew"] = self._cum_rew
+
+        text_img = self._get_action_info_img()
+        info_img = self._get_info_img(info)
+        agent_img = self._get_concat_v(agent_img, info_img)
+        img_to_show = self._get_concat_h(real_game_img, agent_img)
+        img_to_show = self._get_concat_v(img_to_show, text_img)
+
+        self._timesteps += 1
+
+        return np.array(img_to_show)
+
+    def _get_action_info_img(self):
+        text_img = Image.new('RGB', (self._width, 50))
+        d = ImageDraw.Draw(text_img)
+        font = ImageFont.load_default()
+        buttons = ["A", "B", "C", "X", "Y", "Z", "UP", "DOWN", "LEFT", "RIGHT"]
+
+        def vec_to_str(vec):
+            s = ""
+            for a in vec[:6]:
+                if a:
+                    s += " x"
+                else:
+                    s += "  "
+
+            for a in vec[6:7]:
+                if a:
+                    s += " x "
+                else:
+                    s += "   "
+
+            for a in vec[7:]:
+                if a:
+                    s += "  x  "
+                else:
+                    s += "     "
+            return s
+
+        txt = f'    {" ".join(buttons)}\n' \
+              f'P1:{vec_to_str([k in self._p1 and self._p1[k] for k in buttons])}\n' \
+              f'P2:{vec_to_str([k in self._p2 and self._p2[k] for k in buttons])}'
+        d.text((0, 0), txt, fill=(255, 0, 0), font=font)
+        return text_img
+
+    def _get_info_img(self, info):
+        text_img = Image.new('RGB', (120, 120))
+        if 'health' in info:
+            info["P1_health"] = info["health"]
+            info["P2_health"] = info["enemy_health"]
+            del info['health']
+            del info['enemy_health']
+
+            info["P1_wins"] = info["wins"]
+            info["P2_wins"] = info["enemy_rounds_won"]
+            del info['wins']
+            del info['enemy_rounds_won']
+
+            info["steps"] = self._timesteps
+            info["agent steps"] = self._agent_frames
+
+        d = ImageDraw.Draw(text_img)
+        font = ImageFont.load_default()
+        txt = "\n".join([k + ": " + str(v) for k, v in info.items()])
+        d.text((0, 0), txt, fill=(255, 0, 0), font=font)
+        return text_img
 
     def keys_to_act(self, keys):
         inputs_1 = {
@@ -218,16 +308,34 @@ class RetroInteractive(Interactive):
             'RESET': 'ENTER' in keys,
             'START': 'NUM_9' in keys,
         }
+
+        self._p1 = inputs_1
+        self._p2 = inputs_2
+
         acc_vec = [inputs_1[b] for b in self._buttons]
         if self._players == 2:
             acc_vec += [inputs_2[b] for b in self._buttons]
         return acc_vec
 
+    @staticmethod
+    def _get_concat_h(im1, im2):
+        dst = Image.new('RGB', (im1.width + im2.width, im1.height))
+        dst.paste(im1, (0, 0))
+        dst.paste(im2, (im1.width, 0))
+        return dst
+
+    @staticmethod
+    def _get_concat_v(im1, im2):
+        dst = Image.new('RGB', (im1.width, im1.height + im2.height))
+        dst.paste(im1, (0, 0))
+        dst.paste(im2, (0, im1.height))
+        return dst
+
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--game', default='MortalKombatII-Genesis')
-    parser.add_argument('--state', default='Scorpion_vs_SubZero_2p')
+    parser.add_argument('--state', default='Jax_vs_SubZero_2p')
     parser.add_argument('--players', default=2)
     parser.add_argument('--scenario', default=None)
     args = parser.parse_args()
