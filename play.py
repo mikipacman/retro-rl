@@ -111,8 +111,6 @@ class Interactive(abc.ABC):
                 else:
                     self._sound_buffer = np.append(self._sound_buffer, sounds)
 
-                if done:
-                    self._env.reset()
 
     def _draw(self):
         gl.glBindTexture(gl.GL_TEXTURE_2D, self._texture_id)
@@ -174,6 +172,8 @@ class RetroInteractive(Interactive):
 
     def __init__(self, game, state, scenario, players, width=1200):
         env = retro.make(game=game, state=state, scenario=scenario, players=players)
+        from MortalKombat2.EnvHelpers import MK2
+        env = MK2(env)
         self._buttons = env.buttons
         self._players = players
         self._p1 = {}
@@ -181,12 +181,12 @@ class RetroInteractive(Interactive):
         self._width = width
         self._timesteps = 0
         self._agent_frames = 0
-        self._cum_rew = np.array([0., 0.])
+        self._cum_rew = np.array([0.] * players)
         super().__init__(env=env, sync=False, tps=60, width=width)
 
     def get_image(self, obs, rew, done, info, env):
         skip = 10
-        scale_up = 2.5
+        scale_up = 2
         frame = env.render(mode='rgb_array')
         real_game_img = Image.fromarray(frame)
 
@@ -202,7 +202,7 @@ class RetroInteractive(Interactive):
             agent_img = self._agent_img
 
         self._cum_rew += rew
-        info["rew"] = self._cum_rew
+        info["rew"] = [round(self._cum_rew[0], 2), round(self._cum_rew[1], 2)]
 
         text_img = self._get_action_info_img()
         info_img = self._get_info_img(info)
@@ -255,9 +255,9 @@ class RetroInteractive(Interactive):
             del info['health']
             del info['enemy_health']
 
-            info["P1_wins"] = info["wins"]
+            info["P1_wins"] = info["rounds_won"]
             info["P2_wins"] = info["enemy_rounds_won"]
-            del info['wins']
+            del info['rounds_won']
             del info['enemy_rounds_won']
 
             info["steps"] = self._timesteps
@@ -335,7 +335,7 @@ class RetroInteractive(Interactive):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--game', default='MortalKombatII-Genesis')
-    parser.add_argument('--state', default='Jax_vs_SubZero_2p')
+    parser.add_argument('--state', default='Jax_vs_Jax_2p')
     parser.add_argument('--players', default=2)
     parser.add_argument('--scenario', default=None)
     args = parser.parse_args()
