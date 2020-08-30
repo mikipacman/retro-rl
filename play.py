@@ -12,15 +12,15 @@ import numpy as np
 import sounddevice as sd
 from PIL import Image, ImageDraw, ImageFont
 from stable_baselines3.common.atari_wrappers import WarpFrame
+from MortalKombat2.Env import FrameskipWithRealGameTracker
 
 
-class Interactive(abc.ABC):
+class RealTimeVideoPlayer(abc.ABC):
     """
     Base class for making gym environments interactive for human use
     """
-    def __init__(self, env, sync=True, tps=60, width=1000):
-        obs = env.reset()
-        self._image = self.get_image(obs, 0, False, {}, env)
+    def __init__(self, sync=True, tps=60, width=1000, sound_buffer_len=12):
+        self._image, _ = self.get_image_and_sound([])
         assert len(self._image.shape) == 3 and self._image.shape[2] == 3, 'must be an RGB image'
         image_height, image_width = self._image.shape[:2]
 
@@ -32,7 +32,7 @@ class Interactive(abc.ABC):
 
         self._key_handler = pyglet.window.key.KeyStateHandler()
         win.push_handlers(self._key_handler)
-        win.on_close = self._on_close
+        win.on_close = self.on_close
 
         gl.glEnable(gl.GL_TEXTURE_2D)
         self._texture_id = gl.GLuint(0)
@@ -44,7 +44,6 @@ class Interactive(abc.ABC):
         gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MIN_FILTER, gl.GL_NEAREST)
         gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_RGBA8, image_width, image_height, 0, gl.GL_RGB, gl.GL_UNSIGNED_BYTE, None)
 
-        self._env = env
         self._win = win
 
         self._key_previous_states = {}
@@ -56,10 +55,9 @@ class Interactive(abc.ABC):
         self._max_sim_frames_per_update = 4
 
         self._sound_buffer = np.array([])
-        self._rate = self._env.em.get_audio_rate() * 0.85  # for eliminating clipping in real time sound generation
+        self._rate = self.get_audio_rate()
         self._steps = 0
-        self._sound_buffer_len = 12
-
+        self._sound_buffer_len = sound_buffer_len
 
     def _update(self, dt):
         # cap the number of frames rendered so we don't just spend forever trying to catch up on frames
@@ -84,7 +82,7 @@ class Interactive(abc.ABC):
                 self._key_previous_states[key_code] = pressed
 
             if keycodes.ESCAPE in keys_pressed:
-                self._on_close()
+                self.on_close()
 
             # assume that for async environments, we just want to repeat keys for as long as they are held
             inputs = keys_pressed
@@ -97,20 +95,15 @@ class Interactive(abc.ABC):
                     if getattr(keycodes, name) == keycode:
                         keys.append(name)
 
-            act = self.keys_to_act(keys)
+            # if not self._sync:
+            self._image, sounds = self.get_image_and_sound(keys)
+            self._steps += 1
 
-            if not self._sync or act is not None:
-                obs, rew, done, _info = self._env.step(act)
-                self._image = self.get_image(obs, rew, done, _info, self._env)
-                self._steps += 1
-
-                sounds = self._env.em.get_audio()[:, 0]
-                if self._steps % self._sound_buffer_len == 0:
-                    sd.play(self._sound_buffer / 10000, int(self._rate))
-                    self._sound_buffer = np.array(sounds)
-                else:
-                    self._sound_buffer = np.append(self._sound_buffer, sounds)
-
+            if self._steps % self._sound_buffer_len == 0:
+                sd.play(self._sound_buffer / 10000, int(self._rate))
+                self._sound_buffer = np.array(sounds)
+            else:
+                self._sound_buffer = np.append(self._sound_buffer, sounds)
 
     def _draw(self):
         gl.glBindTexture(gl.GL_TEXTURE_2D, self._texture_id)
@@ -129,22 +122,16 @@ class Interactive(abc.ABC):
             ('t2f', [0, 1, 1, 1, 1, 0, 0, 0]),
         )
 
-    def _on_close(self):
-        self._env.close()
-        sys.exit(0)
-
     @abc.abstractmethod
-    def get_image(self, obs, rew, done, info, venv):
+    def on_close(self):
         pass
 
     @abc.abstractmethod
-    def keys_to_act(self, keys):
-        """
-        Given a list of keys that the user has input, produce a gym action to pass to the environment
+    def get_image_and_sound(self, keys):
+        pass
 
-        For sync environments, keys is a list of keys that have been pressed since the last step
-        For async environments, keys is a list of keys currently held down
-        """
+    @abc.abstractmethod
+    def get_audio_rate(self):
         pass
 
     def run(self):
@@ -165,57 +152,79 @@ class Interactive(abc.ABC):
             self._win.flip()
 
 
-class RetroInteractive(Interactive):
-    """
-    Interactive setup for retro games
-    """
+class InteractiveEnvNoFrameskip(RealTimeVideoPlayer):
+    def __init__(self, env, p1, p2, p1_frameskip, p2_frameskip, p1_env, p2_env, width=1200):
+        self._env = env
+        self._p1 = p1
+        self._p2 = p2
+        self._p1_frameskip = p1_frameskip
+        self._p2_frameskip = p2_frameskip
+        self._p1_env = p1_env
+        self._p2_env = p2_env
+        self._p1_frame = None
+        self._p2_frame = None
+        self._p1_act = None
+        self._p2_act = None
 
-    def __init__(self, game, state, scenario, players, width=1200):
-        env = retro.make(game=game, state=state, scenario=scenario, players=players)
-        from MortalKombat2.EnvHelpers import MK2
-        env = MK2(env)
         self._buttons = env.buttons
-        self._players = players
-        self._p1 = {}
-        self._p2 = {}
+        self._players = env.action_space.shape[0] // 12
         self._width = width
-        self._timesteps = 0
-        self._agent_frames = 0
-        self._cum_rew = np.array([0.] * players)
-        super().__init__(env=env, sync=False, tps=60, width=width)
+        self._steps = 0
 
-    def get_image(self, obs, rew, done, info, env):
-        skip = 10
-        scale_up = 2
-        frame = env.render(mode='rgb_array')
-        real_game_img = Image.fromarray(frame)
+        self._env.reset()
 
-        env2 = WarpFrame(env, width=64, height=48)
-        obs = env2.observation(frame[50:200, :, :])
-        obs = obs.reshape(obs.shape[:2])
-        if self._timesteps % skip == 0:
-            agent_img = Image.fromarray(obs, 'L')
-            agent_img = agent_img.resize((int(agent_img.width * scale_up), int(agent_img.height * scale_up)))
-            self._agent_img = agent_img
-            self._agent_frames += 1
+        super().__init__(sync=False, tps=60, width=width)
+
+    def get_audio_rate(self):
+        return self._env.em.get_audio_rate() * 0.85  # for eliminating clipping in real time sound generation
+
+    def on_close(self):
+        self._env.close()
+        sys.exit(0)
+
+    def get_image_and_sound(self, keys):
+        main_frame = self._env.render(mode="rgb_array")
+        act = self._keys_to_act(keys)
+
+        if self._steps % self._p1_frameskip == 0:
+            self._p1_frame = self._p1_env.observation(main_frame)
+            if self._p1 != "human":
+                self._p1_act = self._p1.predict(self._p1_frame)[0]
+                act[:12] = self._p1_act
         else:
-            agent_img = self._agent_img
+            if self._p1 != "human":
+                act[:12] = self._p1_act
 
-        self._cum_rew += rew
-        info["rew"] = [round(self._cum_rew[0], 2), round(self._cum_rew[1], 2)]
+        if self._steps % self._p2_frameskip == 0:
+            self._p2_frame = self._p2_env.observation(main_frame)
+            if self._p2 != "human":
+                self._p2_act = self._p2.predict(self._p2_frame)[0]
+                act[12:] = self._p2_act
+        else:
+            if self._p2 != "human":
+                act[12:] = self._p2_act
 
-        text_img = self._get_action_info_img()
+        _, _, _, info = self._env.step(act)
+
+        # Render img
+        main_img = Image.fromarray(main_frame)
+        p1_img = self._get_player_img(self._p1_frame)
+        p2_img = self._get_player_img(self._p2_frame)
+
+        img = self._get_concat_h(p1_img, main_img)
+        img = self._get_concat_h(img, p2_img)
+
+        action_info_img = self._get_action_info_img(act)
         info_img = self._get_info_img(info)
-        agent_img = self._get_concat_v(agent_img, info_img)
-        img_to_show = self._get_concat_h(real_game_img, agent_img)
-        img_to_show = self._get_concat_v(img_to_show, text_img)
+        info_img = self._get_concat_h(action_info_img, info_img)
+        img = self._get_concat_v(img, info_img)
 
-        self._timesteps += 1
+        self._steps += 1
 
-        return np.array(img_to_show)
+        return np.array(img), self._env.em.get_audio()[:, 0]
 
-    def _get_action_info_img(self):
-        text_img = Image.new('RGB', (self._width, 50))
+    def _get_action_info_img(self, act):
+        text_img = Image.new('RGB', (250, 50))
         d = ImageDraw.Draw(text_img)
         font = ImageFont.load_default()
         buttons = ["A", "B", "C", "X", "Y", "Z", "UP", "DOWN", "LEFT", "RIGHT"]
@@ -242,34 +251,29 @@ class RetroInteractive(Interactive):
             return s
 
         txt = f'    {" ".join(buttons)}\n' \
-              f'P1:{vec_to_str([k in self._p1 and self._p1[k] for k in buttons])}\n' \
-              f'P2:{vec_to_str([k in self._p2 and self._p2[k] for k in buttons])}'
+              f'P1:{vec_to_str([act[self._buttons.index(k)] for k in buttons])}\n' \
+              f'P2:{vec_to_str([act[self._buttons.index(k) + 12] for k in buttons])}'
         d.text((0, 0), txt, fill=(255, 0, 0), font=font)
         return text_img
 
-    def _get_info_img(self, info):
-        text_img = Image.new('RGB', (120, 120))
-        if 'health' in info:
-            info["P1_health"] = info["health"]
-            info["P2_health"] = info["enemy_health"]
-            del info['health']
-            del info['enemy_health']
+    @staticmethod
+    def _get_player_img(frame):
+        mode = "RGB"
+        if len(frame.shape) == 3 and frame.shape[2] == 1:
+            frame = frame.reshape(frame.shape[:2])
+            mode = "L"
+        return Image.fromarray(frame, mode)
 
-            info["P1_wins"] = info["rounds_won"]
-            info["P2_wins"] = info["enemy_rounds_won"]
-            del info['rounds_won']
-            del info['enemy_rounds_won']
-
-            info["steps"] = self._timesteps
-            info["agent steps"] = self._agent_frames
-
+    @staticmethod
+    def _get_info_img(info):
+        text_img = Image.new('RGB', (100, 100))
         d = ImageDraw.Draw(text_img)
         font = ImageFont.load_default()
         txt = "\n".join([k + ": " + str(v) for k, v in info.items()])
         d.text((0, 0), txt, fill=(255, 0, 0), font=font)
         return text_img
 
-    def keys_to_act(self, keys):
+    def _keys_to_act(self, keys):
         inputs_1 = {
             'BUTTON': 'Z' in keys,
             'A': 'F' in keys,
@@ -309,24 +313,18 @@ class RetroInteractive(Interactive):
             'START': 'NUM_9' in keys,
         }
 
-        self._p1 = inputs_1
-        self._p2 = inputs_2
-
-        acc_vec = [inputs_1[b] for b in self._buttons]
-        if self._players == 2:
-            acc_vec += [inputs_2[b] for b in self._buttons]
-        return acc_vec
+        return np.array([inputs_1[b] for b in self._buttons] + [inputs_2[b] for b in self._buttons])
 
     @staticmethod
     def _get_concat_h(im1, im2):
-        dst = Image.new('RGB', (im1.width + im2.width, im1.height))
+        dst = Image.new('RGB', (im1.width + im2.width, max(im1.height, im2.height)))
         dst.paste(im1, (0, 0))
         dst.paste(im2, (im1.width, 0))
         return dst
 
     @staticmethod
     def _get_concat_v(im1, im2):
-        dst = Image.new('RGB', (im1.width, im1.height + im2.height))
+        dst = Image.new('RGB', (max(im1.width, im2.width), im1.height + im2.height))
         dst.paste(im1, (0, 0))
         dst.paste(im2, (0, im1.height))
         return dst
@@ -335,13 +333,24 @@ class RetroInteractive(Interactive):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--game', default='MortalKombatII-Genesis')
-    parser.add_argument('--state', default='Jax_vs_Jax_2p')
-    parser.add_argument('--players', default=2)
-    parser.add_argument('--scenario', default=None)
+    parser.add_argument('--state', default='Jax_vs_Raiden_1p')
+    parser.add_argument('--players', default=1)
     args = parser.parse_args()
 
-    ia = RetroInteractive(game=args.game, state=args.state,
-                          scenario=args.scenario, players=args.players)
+    from MortalKombat2.Env import make_mk2
+    env_normal = make_mk2(state=args.state, players=args.players)
+    env = WarpFrame(env_normal, 48, 48)
+
+    from stable_baselines3 import PPO
+    model = PPO.load("MortalKombat2/saves/mk2_raiden_easy/rl_model_1439985_steps.zip")
+
+    ia = InteractiveEnvNoFrameskip(env=env_normal,
+                                   p1=model,
+                                   p1_env=env,
+                                   p1_frameskip=10,
+                                   p2="human",
+                                   p2_env=env,
+                                   p2_frameskip=1)
     ia.run()
 
 

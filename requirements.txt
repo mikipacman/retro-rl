@@ -9,3 +9,7 @@ moviepy
 gym-retro
 pygame
 sounddevice
+mpi4py
+neptune-client
+psutil
+
