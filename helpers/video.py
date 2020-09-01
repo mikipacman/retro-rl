@@ -8,8 +8,7 @@ import tempfile
 import moviepy.editor as mpe
 
 
-def render_video(game_name, step_function, output, max_length, **env_args):
-    env = retro.make(game=game_name, **env_args)
+def render_video(env, step_function, output, max_length):
     obs = env.reset()
     sound = np.array([])
     frames = []
@@ -26,14 +25,14 @@ def render_video(game_name, step_function, output, max_length, **env_args):
     env.close()
 
     with tempfile.TemporaryDirectory(dir="/tmp") as temp:
-        fps =  len(frames) / (len(sound) / rate)
+        fps = len(frames) / (len(sound) / rate)
         writer = cv2.VideoWriter(temp + '/tmp_vid.mp4', cv2.VideoWriter_fourcc(*'mp4v'), 
                                  fps, (obs.shape[1], obs.shape[0]))
 
         for frame in frames:
             writer.write(frame)
 
-        sf.write(temp + '/tmp_sound.flac', sound / (max(sound) * 2) , int(rate))
+        sf.write(temp + '/tmp_sound.flac', sound / (max(sound) * 2), int(rate))
 
         cv2.destroyAllWindows()
         writer.release()

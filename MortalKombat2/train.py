@@ -9,14 +9,18 @@ from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.callbacks import BaseCallback, CheckpointCallback
 import neptune
 import numpy as np
-
+import tempfile
+from helpers.video import render_video
+import base64
 
 class NeptuneLogger(BaseCallback):
-    def __init__(self, params, exp_name, verbose=0):
+    def __init__(self, params, exp_name, send_video_n_steps, env_func, verbose=0):
         super(NeptuneLogger, self).__init__(verbose)
         neptune.init("miki.pacman/sandbox")
         self._params = params
         self._exp_name = exp_name
+        self._send_video_n_steps = send_video_n_steps
+        self._env_func = env_func
 
     def _on_training_start(self):
         self._context = self.locals["self"]
@@ -64,6 +68,17 @@ class NeptuneLogger(BaseCallback):
         self._iteration += 1
 
     def _on_step(self):
+        if self.n_calls % self._send_video_n_steps == 0:
+            with tempfile.TemporaryDirectory(dir="/tmp") as temp:
+                def step(obs):
+                    return self.model.predict(obs)[0]
+                render_video(self._env_func(), step, temp + "/movie.mp4", int(1e9))
+                encoded = base64.b64encode(open(temp + "/movie.mp4", "rb").read())
+                html = f'<video controls><source type="video/mp4" src="data:video/mp4;base64,{encoded.decode("utf-8")}"></video>'
+                open(temp + "/movie.html", "w+").write(html)
+
+                neptune.send_artifact(temp + "/movie.html", f"movie_{self.n_calls}.html")
+
         return True
 
     @staticmethod
@@ -78,10 +93,10 @@ class NeptuneLogger(BaseCallback):
 
 
 if __name__ == "__main__":
-    exp_name = "MK2_Raiden_easy_test"
+    exp_name = "MK2_KungLao_vs_Scorpion_VeryHard_1p"
     params = {
         'n_env': 16,
-        'state': "Scorpion_vs_Raiden_1p",
+        'state': "KungLao_vs_Scorpion_VeryHard_1p",
         'players': 1,
         'frameskip': 10,
         # 'episode_max_len': 150,
@@ -102,6 +117,7 @@ if __name__ == "__main__":
 
     model.learn(total_timesteps=params["total_timesteps"],
                 callback=[
-                    NeptuneLogger(params, exp_name),
-                    CheckpointCallback(save_freq=params["saving_freq"], save_path="saves/mk2_raiden_easy_scorpio", verbose=2)
+                    NeptuneLogger(params, exp_name, send_video_n_steps=int(1e6), env_func=lambda: make_env(params)),
+                    CheckpointCallback(save_freq=params["saving_freq"],
+                                       save_path="saves/KungLao_vs_Scorpion_VeryHard_1p", verbose=2)
                 ])

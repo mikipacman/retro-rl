@@ -266,7 +266,7 @@ class InteractiveEnvNoFrameskip(RealTimeVideoPlayer):
 
     @staticmethod
     def _get_info_img(info):
-        text_img = Image.new('RGB', (100, 100))
+        text_img = Image.new('RGB', (120, 100))
         d = ImageDraw.Draw(text_img)
         font = ImageFont.load_default()
         txt = "\n".join([k + ": " + str(v) for k, v in info.items()])
@@ -333,7 +333,7 @@ class InteractiveEnvNoFrameskip(RealTimeVideoPlayer):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--game', default='MortalKombatII-Genesis')
-    parser.add_argument('--state', default='Jax_vs_Raiden_1p')
+    parser.add_argument('--state', default='VeryEasy_DeadPool_Baraka')
     parser.add_argument('--players', default=1)
     args = parser.parse_args()
 
@@ -342,10 +342,10 @@ def main():
     env = WarpFrame(env_normal, 48, 48)
 
     from stable_baselines3 import PPO
-    model = PPO.load("MortalKombat2/saves/mk2_raiden_easy/rl_model_1439985_steps.zip")
+    model = PPO.load("MortalKombat2/saves/KungLao_vs_Scorpion_VeryHard_1p/rl_model_4319985_steps.zip")
 
     ia = InteractiveEnvNoFrameskip(env=env_normal,
-                                   p1=model,
+                                   p1="human",
                                    p1_env=env,
                                    p1_frameskip=10,
                                    p2="human",

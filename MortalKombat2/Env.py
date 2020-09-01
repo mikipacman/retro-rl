@@ -2,6 +2,25 @@ import gym
 import numpy as np
 import retro
 
+available_opponents = [
+    "Raiden",
+    "Jax",
+    "Baraka",
+    "SubZero",
+    "Scorpion"
+]
+
+available_arenas = [
+    "DeadPool",
+    "LivingForest",
+    "Portal"
+]
+
+available_difficulties = [
+    "VeryEasy",
+    "Medium",
+    "VeryHard",
+]
 
 class MK2Wrapper(gym.Wrapper):
     def __init__(self, env,
@@ -94,7 +113,7 @@ class MK2Wrapper(gym.Wrapper):
 
 
 def make_mk2(state, players):
-    env = retro.make(game="MortalKombatII-Genesis", state=state, players=players)
+    env = retro.make(game="MortalKombatII-Genesis", state=state, players=players,)
     return MK2Wrapper(env)
 
 
