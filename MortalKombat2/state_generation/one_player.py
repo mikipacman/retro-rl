@@ -30,5 +30,5 @@ for difficulty in ["VeryEasy", "Medium", "VeryHard"]:
                 state = env.em.get_state()
                 env.close()
 
-                with open(f"states/ready_to_play/p1_{difficulty}_{arena}_{p1}_vs_{opp}.state", "wb") as f:
+                with open(f"states/ready_to_play/1p_{difficulty}_{arena}_{p1}_vs_{opp}.state", "wb") as f:
                     f.write(gzip.compress(state))
