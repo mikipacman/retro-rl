@@ -1,11 +1,11 @@
 import retro
 from MortalKombat2.state_generation.utils import *
-from MortalKombat2.constants import *
+from MortalKombat2 import *
 
 for difficulty in ["VeryEasy", "Medium", "VeryHard"]:
     for arena in ["DeadPool", "LivingForest", "Portal"]:
         for opp in ["Raiden", "Jax", "SubZero", "Scorpion", "Baraka"]:
-            for p1 in fighters_list:
+            for p1 in all_fighters:
                 env = retro.make(game_name, players=2, state=f"{difficulty}_{arena}_{opp}")
                 env.reset()
 

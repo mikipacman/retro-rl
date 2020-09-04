@@ -1,358 +1,59 @@
-import sys
-import ctypes
-import argparse
-import abc
-import time
-
-import retro
-import pyglet
-from pyglet import gl
-from pyglet.window import key as keycodes
-import numpy as np
-import sounddevice as sd
-from PIL import Image, ImageDraw, ImageFont
 from stable_baselines3.common.atari_wrappers import WarpFrame
-from MortalKombat2.Env import FrameskipWithRealGameTracker
-
-
-class RealTimeVideoPlayer(abc.ABC):
-    """
-    Base class for making gym environments interactive for human use
-    """
-    def __init__(self, sync=True, tps=60, width=1000, sound_buffer_len=12):
-        self._image, _ = self.get_image_and_sound([])
-        assert len(self._image.shape) == 3 and self._image.shape[2] == 3, 'must be an RGB image'
-        image_height, image_width = self._image.shape[:2]
-
-        aspect_ratio = image_width / image_height
-        win_width = width
-        win_height = int(win_width / aspect_ratio)
-
-        win = pyglet.window.Window(width=win_width, height=win_height)
-
-        self._key_handler = pyglet.window.key.KeyStateHandler()
-        win.push_handlers(self._key_handler)
-        win.on_close = self.on_close
-
-        gl.glEnable(gl.GL_TEXTURE_2D)
-        self._texture_id = gl.GLuint(0)
-        gl.glGenTextures(1, ctypes.byref(self._texture_id))
-        gl.glBindTexture(gl.GL_TEXTURE_2D, self._texture_id)
-        gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_WRAP_S, gl.GL_CLAMP)
-        gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_WRAP_T, gl.GL_CLAMP)
-        gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MAG_FILTER, gl.GL_NEAREST)
-        gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MIN_FILTER, gl.GL_NEAREST)
-        gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_RGBA8, image_width, image_height, 0, gl.GL_RGB, gl.GL_UNSIGNED_BYTE, None)
-
-        self._win = win
-
-        self._key_previous_states = {}
-
-        self._tps = tps
-        self._sync = sync
-        self._current_time = 0
-        self._sim_time = 0
-        self._max_sim_frames_per_update = 4
-
-        self._sound_buffer = np.array([])
-        self._rate = self.get_audio_rate()
-        self._steps = 0
-        self._sound_buffer_len = sound_buffer_len
-
-    def _update(self, dt):
-        # cap the number of frames rendered so we don't just spend forever trying to catch up on frames
-        # if rendering is slow
-        max_dt = self._max_sim_frames_per_update / self._tps
-        if dt > max_dt:
-            dt = max_dt
-
-        # catch up the simulation to the current time
-        self._current_time += dt
-        while self._sim_time < self._current_time:
-            self._sim_time += 1 / self._tps
-
-            keys_clicked = set()
-            keys_pressed = set()
-            for key_code, pressed in self._key_handler.items():
-                if pressed:
-                    keys_pressed.add(key_code)
-
-                if not self._key_previous_states.get(key_code, False) and pressed:
-                    keys_clicked.add(key_code)
-                self._key_previous_states[key_code] = pressed
-
-            if keycodes.ESCAPE in keys_pressed:
-                self.on_close()
-
-            # assume that for async environments, we just want to repeat keys for as long as they are held
-            inputs = keys_pressed
-            if self._sync:
-                inputs = keys_clicked
-
-            keys = []
-            for keycode in inputs:
-                for name in dir(keycodes):
-                    if getattr(keycodes, name) == keycode:
-                        keys.append(name)
-
-            # if not self._sync:
-            self._image, sounds = self.get_image_and_sound(keys)
-            self._steps += 1
-
-            if self._steps % self._sound_buffer_len == 0:
-                sd.play(self._sound_buffer / 10000, int(self._rate))
-                self._sound_buffer = np.array(sounds)
-            else:
-                self._sound_buffer = np.append(self._sound_buffer, sounds)
-
-    def _draw(self):
-        gl.glBindTexture(gl.GL_TEXTURE_2D, self._texture_id)
-        video_buffer = ctypes.cast(self._image.tobytes(), ctypes.POINTER(ctypes.c_short))
-        gl.glTexSubImage2D(gl.GL_TEXTURE_2D, 0, 0, 0, self._image.shape[1], self._image.shape[0], gl.GL_RGB, gl.GL_UNSIGNED_BYTE, video_buffer)
-
-        x = 0
-        y = 0
-        w = self._win.width
-        h = self._win.height
-
-        pyglet.graphics.draw(
-            4,
-            pyglet.gl.GL_QUADS,
-            ('v2f', [x, y, x + w, y, x + w, y + h, x, y + h]),
-            ('t2f', [0, 1, 1, 1, 1, 0, 0, 0]),
-        )
-
-    @abc.abstractmethod
-    def on_close(self):
-        pass
-
-    @abc.abstractmethod
-    def get_image_and_sound(self, keys):
-        pass
-
-    @abc.abstractmethod
-    def get_audio_rate(self):
-        pass
-
-    def run(self):
-        """
-        Run the interactive window until the user quits
-        """
-        # pyglet.app.run() has issues like https://bitbucket.org/pyglet/pyglet/issues/199/attempting-to-resize-or-close-pyglet
-        # and also involves inverting your code to run inside the pyglet framework
-        # avoid both by using a while loop
-        prev_frame_time = time.time()
-        while True:
-            self._win.switch_to()
-            self._win.dispatch_events()
-            now = time.time()
-            self._update(now - prev_frame_time)
-            prev_frame_time = now
-            self._draw()
-            self._win.flip()
-
-
-class InteractiveEnvNoFrameskip(RealTimeVideoPlayer):
-    def __init__(self, env, p1, p2, p1_frameskip, p2_frameskip, p1_env, p2_env, width=1200):
-        self._env = env
-        self._p1 = p1
-        self._p2 = p2
-        self._p1_frameskip = p1_frameskip
-        self._p2_frameskip = p2_frameskip
-        self._p1_env = p1_env
-        self._p2_env = p2_env
-        self._p1_frame = None
-        self._p2_frame = None
-        self._p1_act = None
-        self._p2_act = None
-
-        self._buttons = env.buttons
-        self._players = env.action_space.shape[0] // 12
-        self._width = width
-        self._steps = 0
-
-        self._env.reset()
-
-        super().__init__(sync=False, tps=60, width=width)
-
-    def get_audio_rate(self):
-        return self._env.em.get_audio_rate() * 0.85  # for eliminating clipping in real time sound generation
-
-    def on_close(self):
-        self._env.close()
-        sys.exit(0)
-
-    def get_image_and_sound(self, keys):
-        main_frame = self._env.render(mode="rgb_array")
-        act = self._keys_to_act(keys)
-
-        if self._steps % self._p1_frameskip == 0:
-            self._p1_frame = self._p1_env.observation(main_frame)
-            if self._p1 != "human":
-                self._p1_act = self._p1.predict(self._p1_frame)[0]
-                act[:12] = self._p1_act
-        else:
-            if self._p1 != "human":
-                act[:12] = self._p1_act
-
-        if self._steps % self._p2_frameskip == 0:
-            self._p2_frame = self._p2_env.observation(main_frame)
-            if self._p2 != "human":
-                self._p2_act = self._p2.predict(self._p2_frame)[0]
-                act[12:] = self._p2_act
-        else:
-            if self._p2 != "human":
-                act[12:] = self._p2_act
-
-        _, _, _, info = self._env.step(act)
-
-        # Render img
-        main_img = Image.fromarray(main_frame)
-        p1_img = self._get_player_img(self._p1_frame)
-        p2_img = self._get_player_img(self._p2_frame)
-
-        img = self._get_concat_h(p1_img, main_img)
-        img = self._get_concat_h(img, p2_img)
-
-        action_info_img = self._get_action_info_img(act)
-        info_img = self._get_info_img(info)
-        info_img = self._get_concat_h(action_info_img, info_img)
-        img = self._get_concat_v(img, info_img)
-
-        self._steps += 1
-
-        return np.array(img), self._env.em.get_audio()[:, 0]
-
-    def _get_action_info_img(self, act):
-        text_img = Image.new('RGB', (250, 50))
-        d = ImageDraw.Draw(text_img)
-        font = ImageFont.load_default()
-        buttons = ["A", "B", "C", "X", "Y", "Z", "UP", "DOWN", "LEFT", "RIGHT"]
-
-        def vec_to_str(vec):
-            s = ""
-            for a in vec[:6]:
-                if a:
-                    s += " x"
-                else:
-                    s += "  "
-
-            for a in vec[6:7]:
-                if a:
-                    s += " x "
-                else:
-                    s += "   "
-
-            for a in vec[7:]:
-                if a:
-                    s += "  x  "
-                else:
-                    s += "     "
-            return s
-
-        txt = f'    {" ".join(buttons)}\n' \
-              f'P1:{vec_to_str([act[self._buttons.index(k)] for k in buttons])}\n' \
-              f'P2:{vec_to_str([act[self._buttons.index(k) + 12] for k in buttons])}'
-        d.text((0, 0), txt, fill=(255, 0, 0), font=font)
-        return text_img
-
-    @staticmethod
-    def _get_player_img(frame):
-        mode = "RGB"
-        if len(frame.shape) == 3 and frame.shape[2] == 1:
-            frame = frame.reshape(frame.shape[:2])
-            mode = "L"
-        return Image.fromarray(frame, mode)
-
-    @staticmethod
-    def _get_info_img(info):
-        text_img = Image.new('RGB', (120, 100))
-        d = ImageDraw.Draw(text_img)
-        font = ImageFont.load_default()
-        txt = "\n".join([k + ": " + str(v) for k, v in info.items()])
-        d.text((0, 0), txt, fill=(255, 0, 0), font=font)
-        return text_img
-
-    def _keys_to_act(self, keys):
-        inputs_1 = {
-            'BUTTON': 'Z' in keys,
-            'A': 'F' in keys,
-            'B': 'G' in keys,
-            'C': 'H' in keys,
-            'X': 'R' in keys,
-            'Y': 'T' in keys,
-            'Z': 'Y' in keys,
-            'L': 'Z' in keys,
-            'R': 'C' in keys,
-            'UP': 'W' in keys,
-            'DOWN': 'S' in keys,
-            'LEFT': 'A' in keys,
-            'RIGHT': 'D' in keys,
-            'MODE': 'TAB' in keys,
-            'SELECT': 'Q' in keys,
-            'RESET': 'ENTER' in keys,
-            'START': 'E' in keys,
-        }
-        inputs_2 = {
-            'BUTTON': 'Z' in keys,
-            'A': 'NUM_1' in keys,
-            'B': 'NUM_2' in keys,
-            'C': 'NUM_3' in keys,
-            'X': 'NUM_4' in keys,
-            'Y': 'NUM_5' in keys,
-            'Z': 'NUM_6' in keys,
-            'L': 'Z' in keys,
-            'R': 'C' in keys,
-            'UP': 'UP' in keys,
-            'DOWN': 'DOWN' in keys,
-            'LEFT': 'LEFT' in keys,
-            'RIGHT': 'RIGHT' in keys,
-            'MODE': 'TAB' in keys,
-            'SELECT': 'NUM_7' in keys,
-            'RESET': 'ENTER' in keys,
-            'START': 'NUM_9' in keys,
-        }
-
-        return np.array([inputs_1[b] for b in self._buttons] + [inputs_2[b] for b in self._buttons])
-
-    @staticmethod
-    def _get_concat_h(im1, im2):
-        dst = Image.new('RGB', (im1.width + im2.width, max(im1.height, im2.height)))
-        dst.paste(im1, (0, 0))
-        dst.paste(im2, (im1.width, 0))
-        return dst
-
-    @staticmethod
-    def _get_concat_v(im1, im2):
-        dst = Image.new('RGB', (max(im1.width, im2.width), im1.height + im2.height))
-        dst.paste(im1, (0, 0))
-        dst.paste(im2, (0, im1.height))
-        return dst
-
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--game', default='MortalKombatII-Genesis')
-    parser.add_argument('--state', default='VeryEasy_DeadPool_Baraka')
-    parser.add_argument('--players', default=1)
-    args = parser.parse_args()
-
-    from MortalKombat2.Env import make_mk2
-    env_normal = make_mk2(state=args.state, players=args.players)
-    env = WarpFrame(env_normal, 48, 48)
-
-    from stable_baselines3 import PPO
-    model = PPO.load("MortalKombat2/saves/KungLao_vs_Scorpion_VeryHard_1p/rl_model_4319985_steps.zip")
-
-    ia = InteractiveEnvNoFrameskip(env=env_normal,
-                                   p1="human",
-                                   p1_env=env,
-                                   p1_frameskip=10,
-                                   p2="human",
-                                   p2_env=env,
-                                   p2_frameskip=1)
-    ia.run()
+from helpers.interactive_env_recorder import InteractiveEnvRecorder
+from stable_baselines3.common.monitor import Monitor
+import MortalKombat2
+from MortalKombat2.wrappers import FrameskipWrapper, MaxEpLenWrapper
 
 
 if __name__ == '__main__':
-    main()
+    params = {
+        'difficulties': ["VeryEasy"],
+        'arenas': ["DeadPool"],
+        'left_players': ["Scorpion"],
+        'right_players': ["Raiden"],
+        'frameskip': 10,
+        'actions': "ALL",
+        'max_episode_length': None,
+        'n_env': 16,
+        'controllable_players': 1,
+        'total_timesteps': int(1e7),
+        'saving_freq': int(1e4),
+        'send_video_n_epoch': 25,
+    }
+
+    def make_env(params, train=True):
+        clear = MortalKombat2. \
+            make_mortal_kombat2_env(difficulties=params["difficulties"],
+                                    arenas=params["arenas"],
+                                    left_players=params["left_players"],
+                                    right_players=params["right_players"],
+                                    controllable_players=params["controllable_players"],
+                                    actions=params["actions"])
+
+        env = FrameskipWrapper(clear, skip=params["frameskip"])
+
+        if params["max_episode_length"]:
+            env = MaxEpLenWrapper(env, max_len=params["params"] // params["frameskip"])
+
+        env = WarpFrame(env, 48, 48)
+
+        if train:
+            env = Monitor(env, info_keywords=("P1_rounds", "P2_rounds", "P1_health", "P2_health", "steps"))
+            return env
+        else:
+            return clear, env, env
+
+    env1, env2, env3 = make_env(params, train=False)
+    ia = InteractiveEnvRecorder(env=env1,
+                                p1="human",
+                                p1_env=env2,
+                                p1_frameskip=params["frameskip"],
+                                p2="human",
+                                p2_env=env3,
+                                p2_frameskip=1,
+                                record_output_path="/tmp/test.mp4",
+                                close_after_done=True,
+                                record_n_frames_after_done=300,
+                                resize_video=2,
+                                show_on_screen=True)
+    ia.run()

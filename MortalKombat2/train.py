@@ -1,25 +1,26 @@
-from MortalKombat2.Env import make_mk2
+import MortalKombat2
 from stable_baselines3 import PPO
-from stable_baselines3.ppo import CnnPolicy, MlpPolicy
+from stable_baselines3.ppo import CnnPolicy
 from stable_baselines3.common.atari_wrappers import WarpFrame
 import time
-from MortalKombat2.Env import FrameskipWithRealGameTracker, MaxEpLenWrapper
 from stable_baselines3.common.vec_env import SubprocVecEnv
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.callbacks import BaseCallback, CheckpointCallback
 import neptune
 import numpy as np
 import tempfile
-from helpers.video import render_video
+from helpers.interactive_env_recorder import InteractiveEnvRecorder
 import base64
+from MortalKombat2.wrappers import FrameskipWrapper, MaxEpLenWrapper
+
 
 class NeptuneLogger(BaseCallback):
-    def __init__(self, params, exp_name, send_video_n_steps, env_func, verbose=0):
+    def __init__(self, params, exp_name, send_video_n_epoch, env_func, verbose=0):
         super(NeptuneLogger, self).__init__(verbose)
         neptune.init("miki.pacman/sandbox")
         self._params = params
         self._exp_name = exp_name
-        self._send_video_n_steps = send_video_n_steps
+        self._send_video_n_epoch = send_video_n_epoch
         self._env_func = env_func
 
     def _on_training_start(self):
@@ -65,20 +66,12 @@ class NeptuneLogger(BaseCallback):
         for k, v in self.logger.get_log_dict().items():
             neptune.send_metric(k, v)
 
+        if self._iteration % self._send_video_n_epoch == 0:
+            self._generate_eval_video()
+
         self._iteration += 1
 
     def _on_step(self):
-        if self.n_calls % self._send_video_n_steps == 0:
-            with tempfile.TemporaryDirectory(dir="/tmp") as temp:
-                def step(obs):
-                    return self.model.predict(obs)[0]
-                render_video(self._env_func(), step, temp + "/movie.mp4", int(1e9))
-                encoded = base64.b64encode(open(temp + "/movie.mp4", "rb").read())
-                html = f'<video controls><source type="video/mp4" src="data:video/mp4;base64,{encoded.decode("utf-8")}"></video>'
-                open(temp + "/movie.html", "w+").write(html)
-
-                neptune.send_artifact(temp + "/movie.html", f"movie_{self.n_calls}.html")
-
         return True
 
     @staticmethod
@@ -91,33 +84,79 @@ class NeptuneLogger(BaseCallback):
         neptune.send_metric(prefix + "_min", np.min(data))
         neptune.send_metric(prefix + "_max", np.max(data))
 
+    def _generate_eval_video(self):
+        env_main, env1, env2 = self._env_func()
+        with tempfile.TemporaryDirectory(dir="/tmp") as temp:
+            ia = InteractiveEnvRecorder(env=env_main,
+                                        p1=model,
+                                        p1_env=env1,
+                                        p1_frameskip=params["frameskip"],
+                                        p2="human",
+                                        p2_env=env2,
+                                        p2_frameskip=1,
+                                        record_output_path=temp + "/movie.mp4",
+                                        close_after_done=True,
+                                        record_n_frames_after_done=300,
+                                        resize_video=2,
+                                        show_on_screen=False)
+            ia.run()
+            del ia
+
+            encoded = base64.b64encode(open(temp + "/movie.mp4", "rb").read())
+            html = f'<video controls><source type="video/mp4" ' \
+                   f'src="data:video/mp4;base64,{encoded.decode("utf-8")}"></video>'
+            open(temp + "/movie.html", "w+").write(html)
+
+            neptune.send_artifact(temp + "/movie.html", f"movie_{self._context.num_timesteps}.html")
+
+
+def make_env(params, train=True):
+    clear = MortalKombat2. \
+        make_mortal_kombat2_env(difficulties=params["difficulties"],
+                                arenas=params["arenas"],
+                                left_players=params["left_players"],
+                                right_players=params["right_players"],
+                                controllable_players=params["controllable_players"],
+                                actions=params["actions"])
+
+    env = FrameskipWrapper(clear, skip=params["frameskip"])
+
+    if params["max_episode_length"]:
+        env = MaxEpLenWrapper(env, max_len=params["params"] // params["frameskip"])
+
+    env = WarpFrame(env, 48, 48)
+
+    if train:
+        env = Monitor(env, info_keywords=("P1_rounds", "P2_rounds", "P1_health", "P2_health", "steps"))
+        return env
+    else:
+        return clear, env, env
+
 
 if __name__ == "__main__":
-    exp_name = "MK2_KungLao_vs_Scorpion_VeryHard_1p"
+    exp_name = "MK2_test"
     params = {
-        'n_env': 16,
-        'state': "KungLao_vs_Scorpion_VeryHard_1p",
-        'players': 1,
+        'difficulties': ["VeryEasy"],
+        'arenas': ["DeadPool"],
+        'left_players': ["Scorpion"],
+        'right_players': ["Raiden"],
         'frameskip': 10,
-        # 'episode_max_len': 150,
+        'actions': "ALL",
+        'max_episode_length': None,
+        'n_env': 16,
+        'controllable_players': 1,
         'total_timesteps': int(1e7),
         'saving_freq': int(1e4),
+        'send_video_n_epoch': 25,
     }
 
-    def make_env(params):
-        env = make_mk2(state=params["state"], players=params["players"])
-        env = WarpFrame(env, 48, 48)
-        env = FrameskipWithRealGameTracker(env, skip=params["frameskip"])
-        # env = MaxEpLenWrapper(env, params["episode_max_len"])
-        return Monitor(env, info_keywords=("P1_rounds", "P2_rounds", "P1_health", "P2_health", "steps"))
-
+    callbacks = [
+        NeptuneLogger(params, exp_name, send_video_n_epoch=params["send_video_n_epoch"],
+                      env_func=lambda: make_env(params, train=False)),
+        CheckpointCallback(save_freq=params["saving_freq"], save_path=f"saves/{exp_name}", verbose=2)
+    ]
 
     env = SubprocVecEnv([lambda: make_env(params) for _ in range(params["n_env"])], start_method="forkserver")
     model = PPO(CnnPolicy, env)
 
-    model.learn(total_timesteps=params["total_timesteps"],
-                callback=[
-                    NeptuneLogger(params, exp_name, send_video_n_steps=int(1e6), env_func=lambda: make_env(params)),
-                    CheckpointCallback(save_freq=params["saving_freq"],
-                                       save_path="saves/KungLao_vs_Scorpion_VeryHard_1p", verbose=2)
-                ])
+    model.learn(total_timesteps=params["total_timesteps"], callback=callbacks)

@@ -12,4 +12,5 @@ sounddevice
 mpi4py
 neptune-client
 psutil
-
+pyglet
+numpy

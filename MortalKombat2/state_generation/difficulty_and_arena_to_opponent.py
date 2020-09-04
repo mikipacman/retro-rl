@@ -1,6 +1,6 @@
 import retro
 from MortalKombat2.state_generation.utils import *
-from MortalKombat2.constants import *
+from MortalKombat2 import *
 
 
 for difficulty in ["VeryEasy", "Medium", "VeryHard"]:
@@ -9,7 +9,7 @@ for difficulty in ["VeryEasy", "Medium", "VeryHard"]:
         explored_opponents = set()
         print("\n", difficulty.upper(), arena.upper())
         print("Opponents List")
-        for i, o in enumerate(fighters_list):
+        for i, o in enumerate(all_fighters):
             print(i, o)
 
         env = retro.make(game_name, players=2, state=f"{difficulty}_{arena}",
@@ -38,7 +38,7 @@ for difficulty in ["VeryEasy", "Medium", "VeryHard"]:
                 break
 
             opponent = int(opponent)
-            explored_opponents.add(fighters_list[opponent])
+            explored_opponents.add(all_fighters[opponent])
             save_state(state, f"states/1p/by_difficulty_arena_and_opponent/"
-                              f"{difficulty}_{arena}_{fighters_list[opponent]}.state")
+                              f"{difficulty}_{arena}_{all_fighters[opponent]}.state")
         env.close()

@@ -1,34 +1,14 @@
 import gym
 import numpy as np
-import retro
 
-available_opponents = [
-    "Raiden",
-    "Jax",
-    "Baraka",
-    "SubZero",
-    "Scorpion"
-]
-
-available_arenas = [
-    "DeadPool",
-    "LivingForest",
-    "Portal"
-]
-
-available_difficulties = [
-    "VeryEasy",
-    "Medium",
-    "VeryHard",
-]
 
 class MK2Wrapper(gym.Wrapper):
-    def __init__(self, env,
-                 opp_health_factor=0.1,
-                 own_health_factor=-0.1,
-                 win_factor=10,
-                 lose_factor=-10,
-                 done_after="round"):
+    def __init__(self, env, states,
+                 opp_health_factor,
+                 own_health_factor,
+                 win_factor,
+                 lose_factor,
+                 done_after):
         super().__init__(env)
         self._previous_health = np.array([120, 120])
         self._previous_win = np.array([0, 0])
@@ -42,7 +22,7 @@ class MK2Wrapper(gym.Wrapper):
         self._done_after = done_after
         self._cumulative_reward = np.array([0.] * self._players)
         self._steps = 0
-        assert done_after in ["match", "round"]
+        self._states = states
 
     def step(self, action):
         obs, rew, _, info = self.env.step(action)
@@ -106,47 +86,26 @@ class MK2Wrapper(gym.Wrapper):
         self._in_game = True
         self._cumulative_reward = np.array([0.] * self._players)
         self._steps = 0
+        self.env.load_state(np.random.choice(self._states))
         return self.env.reset(**kwargs)
 
     def observation(self, frame):
         return frame
 
 
-def make_mk2(state, players):
-    env = retro.make(game="MortalKombatII-Genesis", state=state, players=players,)
-    return MK2Wrapper(env)
-
-
-class FrameskipWithRealGameTracker(gym.Wrapper):
-    def __init__(self, env, skip=4):
+class FrameskipWrapper(gym.Wrapper):
+    def __init__(self, env, skip):
         super().__init__(env)
+        assert skip >= 1
         self._skip = skip
-        self._real_images = []
-        self._real_sounds = []
-        self._real_infos = []
-
-    def reset(self):
-        self._real_images = []
-        self._real_sounds = []
-        self._real_infos = []
-
-        return self.env.reset()
 
     def step(self, act):
         total_rew = 0.0
-        done = None
-        # self._real_images, self._real_sounds, self._real_infos = [], [], []
         for i in range(self._skip):
             obs, rew, done, info = self.env.step(act)
             total_rew += rew
-            # self._real_images.append(self.env.render(mode="rgb_array"))
-            # self._real_sounds.append(self.env.em.get_audio())
-            # self._real_infos.append(info)
 
         return obs, total_rew, done, info
-
-    def get_real_game_data(self):
-        return self._real_images, self._real_sounds, self._real_infos
 
 
 class MaxEpLenWrapper(gym.Wrapper):
@@ -163,5 +122,6 @@ class MaxEpLenWrapper(gym.Wrapper):
         o, r, d, i = self.env.step(action)
         if self._steps == self._max_len:
             return o, r, True, i
-        self._steps += 1
-        return o, r, d, i
+        else:
+            self._steps += 1
+            return o, r, d, i

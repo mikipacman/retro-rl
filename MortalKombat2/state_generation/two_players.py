@@ -1,9 +1,9 @@
 import retro
 from MortalKombat2.state_generation.utils import *
-from MortalKombat2.constants import *
+from MortalKombat2 import *
 
-for p1 in fighters_list:
-    for p2 in fighters_list:
+for p1 in all_fighters:
+    for p2 in all_fighters:
         env = retro.make(game_name, players=2, state="choose_fighters")
         env.reset()
 

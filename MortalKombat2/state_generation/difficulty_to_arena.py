@@ -1,8 +1,8 @@
 import retro
 from MortalKombat2.state_generation.utils import *
-from MortalKombat2.constants import *
+from MortalKombat2 import *
 
-for difficulty in difficulties:
+for difficulty in all_difficulties:
     env = retro.make(game_name, players=2, state=difficulty,  use_restricted_actions=retro.Actions.ALL)
     env.reset()
 
@@ -11,7 +11,7 @@ for difficulty in difficulties:
 
     print(f"\n\n{difficulty.upper()} difficulty")
     print("Arenas list:")
-    for i, arena in enumerate(arenas):
+    for i, arena in enumerate(all_arenas):
         print(i, arena)
     print("\n")
 
@@ -28,8 +28,8 @@ for difficulty in difficulties:
             env.close()
             break
         n = int(level)
-        save_state(state, f"states/1p/by_difficulty_and_arena/{difficulty}_{arenas[n]}.state")
-        explored_arenas.add(arenas[n])
+        save_state(state, f"states/1p/by_difficulty_and_arena/{difficulty}_{all_arenas[n]}.state")
+        explored_arenas.add(all_arenas[n])
 
         # Waiting...
         wait_for_next_menu(env)
