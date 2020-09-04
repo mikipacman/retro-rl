@@ -4,6 +4,17 @@ gym in order to run a tournament between RL agents trained in retro games enviro
 I'm focusing on fighting games like Street Fighter and Mortal Kombat. I'm planning on testing
 selfplay techniques on these envs.
 
+# How to run those scripts?
+- create empty conda env
+- `pip install -r requirements.txt`
+- download states (for now only [MortalKombat2](https://drive.google.com/file/d/1unUllgKxj1VInR-WxDxxQHZnoHsg1uDr/view?usp=sharing) is available)
+- paste `MortalKombat2/ready_to_play/*` to `<path to python retro-rl in your venv>/data/stable/MortalKombatII-Genesis/`
+- enjoy life with `python MortalKombat2/enjoy.py`
+- possibly mess around with `train.py` and `play.py`
+- choose your destiny
+- train some powerful agents and rule the world!
+
+
 # How to create own states?
 Following instructions work for Sega Genesis emulator
 - install [Retro](https://github.com/openai/retro)
