@@ -1,6 +1,7 @@
 game_data
 .ipynb_checkpoints/
 MortalKombat2/state_generation/states
+MortalKombat2/saves
 .idea
 */__pycache__
 __pycache__
