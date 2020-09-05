@@ -15,24 +15,15 @@ from MortalKombat2.wrappers import FrameskipWrapper, MaxEpLenWrapper
 
 
 class NeptuneLogger(BaseCallback):
-    def __init__(self, params, exp_name, send_video_n_epoch, env_func, verbose=0):
+    def __init__(self, exp, send_video_n_epoch, env_func, verbose=0):
         super(NeptuneLogger, self).__init__(verbose)
-        neptune.init("miki.pacman/MK2")
-        self._params = params
-        self._exp_name = exp_name
+        self._exp = exp
         self._send_video_n_epoch = send_video_n_epoch
         self._env_func = env_func
 
     def _on_training_start(self):
         self._context = self.locals["self"]
         self._iteration = 0
-        list_of_params = ["learning_rate", "n_steps", "batch_size", "n_epochs",
-                          "gamma", "gae_lambda", "clip_range", "clip_range_vf",
-                          "ent_coef", "vf_coef", "max_grad_norm", "use_sde",
-                          "sde_sample_freq", "target_kl", "policy_kwargs",
-                          "seed", "device"]
-        self._params.update({param: getattr(self._context, param) for param in list_of_params})
-        neptune.create_experiment(self._exp_name, params=self._params)
 
     def _on_training_end(self):
         pass
@@ -57,7 +48,6 @@ class NeptuneLogger(BaseCallback):
             "rollout/p1_health": "P1_health",
             "rollout/p2_health": "P2_health",
             "rollout/real_ep_len": "steps",
-
         }
 
         for k, v in name_to_key.items():
@@ -134,29 +124,65 @@ def make_env(params, train=True):
 
 
 if __name__ == "__main__":
-    exp_name = "Medium_Raiden"
-    params = {
-        'difficulties': ["Medium"],
+    neptune.init("miki.pacman/MK2")
+
+    exp_name = "VeryEasy_Raiden"
+    env_params = {
+        'difficulties': ["VeryEasy"],
         'arenas': ["DeadPool"],
         'left_players': ["Scorpion"],
         'right_players': ["Raiden"],
-        'frameskip': 10,
         'actions': "ALL",
-        'max_episode_length': None,
-        'n_env': 16,
         'controllable_players': 1,
+        'n_env': 16,
+    }
+    learn_params = {
         'total_timesteps': int(1e7),
         'saving_freq': int(1e4),
         'send_video_n_epoch': 25,
     }
+    wrappers_params = {
+        'frameskip': 10,
+        'max_episode_length': None,
+    }
+    algo_params = {
+        "algo_name": "PPO",
+        "learning_rate": 3e-4,
+        "n_steps": 2048,
+        "batch_size": 64,
+        "n_epochs": 10,
+        "gamma": 0.99,
+        "gae_lambda": 0.95,
+        "clip_range": 0.2,
+        "clip_range_vf":  None,
+        "ent_coef": 0.0,
+        "vf_coef": 0.5,
+        "max_grad_norm": 0.5,
+        "use_sde": False,
+        "sde_sample_freq": -1,
+        "target_kl": None,
+        "tensorboard_log": None,
+        "create_eval_env": False,
+        "policy_kwargs": None,
+        "verbose": 0,
+        "seed": None,
+        "device": "auto",
+    }
+    params = {
+        **env_params,
+        **learn_params,
+        **wrappers_params,
+        **algo_params,
+    }
 
-    callbacks = [
-        NeptuneLogger(params, exp_name, send_video_n_epoch=params["send_video_n_epoch"],
-                      env_func=lambda: make_env(params, train=False)),
-        CheckpointCallback(save_freq=params["saving_freq"], save_path=f"saves/{exp_name}", verbose=2)
-    ]
+    with neptune.create_experiment(name=exp_name, params=params) as exp:
+        callbacks = [
+            NeptuneLogger(exp=exp, send_video_n_epoch=params["send_video_n_epoch"],
+                          env_func=lambda: make_env(params, train=False)),
+            CheckpointCallback(save_freq=params["saving_freq"], save_path=f"saves/{exp.id}", verbose=2)
+        ]
 
-    env = SubprocVecEnv([lambda: make_env(params) for _ in range(params["n_env"])], start_method="forkserver")
-    model = PPO(CnnPolicy, env)
+        env = SubprocVecEnv([lambda: make_env(params) for _ in range(params["n_env"])], start_method="forkserver")
+        model = PPO(CnnPolicy, env)
 
-    model.learn(total_timesteps=params["total_timesteps"], callback=callbacks)
+        model.learn(total_timesteps=params["total_timesteps"], callback=callbacks)
