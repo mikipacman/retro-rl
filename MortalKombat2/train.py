@@ -17,7 +17,7 @@ from MortalKombat2.wrappers import FrameskipWrapper, MaxEpLenWrapper
 class NeptuneLogger(BaseCallback):
     def __init__(self, params, exp_name, send_video_n_epoch, env_func, verbose=0):
         super(NeptuneLogger, self).__init__(verbose)
-        neptune.init("miki.pacman/sandbox")
+        neptune.init("miki.pacman/MK2")
         self._params = params
         self._exp_name = exp_name
         self._send_video_n_epoch = send_video_n_epoch
@@ -134,9 +134,9 @@ def make_env(params, train=True):
 
 
 if __name__ == "__main__":
-    exp_name = "MK2_test"
+    exp_name = "Medium_Raiden"
     params = {
-        'difficulties': ["VeryEasy"],
+        'difficulties': ["Medium"],
         'arenas': ["DeadPool"],
         'left_players': ["Scorpion"],
         'right_players': ["Raiden"],

@@ -1,5 +1,5 @@
 import numpy as np
-from MortalKombat2.wrappers import MK2Wrapper, MaxEpLenWrapper, FrameskipWrapper
+from MortalKombat2.wrappers import MK2Wrapper
 import retro
 
 # Constants

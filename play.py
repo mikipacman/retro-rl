@@ -51,7 +51,7 @@ if __name__ == '__main__':
                                 p2="human",
                                 p2_env=env3,
                                 p2_frameskip=1,
-                                record_output_path="/tmp/test.mp4",
+                                record_output_path=None,#"/tmp/test.mp4",
                                 close_after_done=True,
                                 record_n_frames_after_done=300,
                                 resize_video=2,

@@ -297,11 +297,12 @@ class InteractiveEnvRecorder(RealTimeVideoPlayer):
         return image, sound
 
     def _get_action_info_img(self, act):
-        text_img = Image.new('RGB', (250, 50))
+        text_img = Image.new('RGB', (275, 50))
         d = ImageDraw.Draw(text_img)
         font = ImageFont.load_default()
-        buttons = ["A", "B", "C", "X", "Y", "Z", "UP", "DOWN", "LEFT", "RIGHT"]
+        buttons = ["A", "B", "C", "X", "Y", "Z", "UP", "DOWN", "LEFT", "RIGHT", "START", "MODE"]
 
+        # I know its ugly
         def vec_to_str(vec):
             s = ""
             for a in vec[:6]:
@@ -316,11 +317,18 @@ class InteractiveEnvRecorder(RealTimeVideoPlayer):
                 else:
                     s += "   "
 
-            for a in vec[7:]:
+            for a in vec[7:9]:
                 if a:
                     s += "  x  "
                 else:
                     s += "     "
+
+            for a in vec[9:]:
+                if a:
+                    s += "   x  "
+                else:
+                    s += "      "
+
             return s
 
         txt = f'    {" ".join(buttons)}\n' \
@@ -361,8 +369,8 @@ class InteractiveEnvRecorder(RealTimeVideoPlayer):
             'DOWN': 'S' in keys,
             'LEFT': 'A' in keys,
             'RIGHT': 'D' in keys,
-            'MODE': 'TAB' in keys,
-            'SELECT': 'Q' in keys,
+            'MODE': 'Q' in keys,
+            'SELECT': 'TAB' in keys,
             'RESET': 'ENTER' in keys,
             'START': 'E' in keys,
         }
@@ -380,8 +388,8 @@ class InteractiveEnvRecorder(RealTimeVideoPlayer):
             'DOWN': 'DOWN' in keys,
             'LEFT': 'LEFT' in keys,
             'RIGHT': 'RIGHT' in keys,
-            'MODE': 'TAB' in keys,
-            'SELECT': 'NUM_7' in keys,
+            'MODE': 'NUM_7' in keys,
+            'SELECT': 'TAB' in keys,
             'RESET': 'ENTER' in keys,
             'START': 'NUM_9' in keys,
         }
