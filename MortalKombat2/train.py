@@ -37,7 +37,7 @@ def make_env(params, train=True):
 neptune.init("miki.pacman/MK2")
 exp_name = "3_arenas_Raiden"
 env_params = {
-    'difficulties': ["VeryEasy"],
+    'difficulties': ["Medium"],
     'arenas': ["DeadPool", "LivingForest", "Portal"],
     'left_players': ["Scorpion"],
     'right_players': ["Raiden"],
