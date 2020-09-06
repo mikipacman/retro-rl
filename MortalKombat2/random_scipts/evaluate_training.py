@@ -9,20 +9,54 @@ import time
 import os
 
 
-exp_name = "Medium_Raiden"
-params = {
-    'difficulties': ["Medium"],
-    'arenas': ["DeadPool"],
+exp_name = "VeryHard_Raiden"
+exp_id = "MK-5"
+env_params = {
+    'difficulties': ["VeryEasy", "Medium", "VeryHard"],
+    'arenas': ["LivingForest"],
     'left_players': ["Scorpion"],
     'right_players': ["Raiden"],
-    'frameskip': 10,
     'actions': "ALL",
-    'max_episode_length': None,
-    'n_env': 16,
     'controllable_players': 1,
+    'n_env': 16,
+}
+learn_params = {
     'total_timesteps': int(1e7),
     'saving_freq': int(1e4),
     'send_video_n_epoch': 25,
+}
+wrappers_params = {
+    'frameskip': 10,
+    'max_episode_length': None,
+}
+algo_params = {
+    "algo_name": "PPO",
+    "learning_rate": 3e-4,
+    "n_steps": 2048,
+    "batch_size": 64,
+    "n_epochs": 10,
+    "gamma": 0.99,
+    "gae_lambda": 0.95,
+    "clip_range": 0.2,
+    "clip_range_vf":  None,
+    "ent_coef": 0.0,
+    "vf_coef": 0.5,
+    "max_grad_norm": 0.5,
+    "use_sde": False,
+    "sde_sample_freq": -1,
+    "target_kl": None,
+    "tensorboard_log": None,
+    "create_eval_env": False,
+    "policy_kwargs": None,
+    "verbose": 0,
+    "seed": None,
+    "device": "auto",
+}
+params = {
+    **env_params,
+    **learn_params,
+    **wrappers_params,
+    **algo_params,
 }
 
 
@@ -41,7 +75,6 @@ def make_env(params, train=True):
         env = MaxEpLenWrapper(env, max_len=params["params"] // params["frameskip"])
 
     env = WarpFrame(env, 48, 48)
-
     if train:
         env = Monitor(env, info_keywords=("P1_rounds", "P2_rounds", "P1_health", "P2_health", "steps"))
         return env
@@ -51,18 +84,20 @@ def make_env(params, train=True):
 
 env = make_env(params)
 x, y = [], []
-for root, _, files in os.walk(f"saves/{exp_name}"):
+for root, _, files in os.walk(f"../saves/{exp_id}"):
     d = {int(file[len("rl_model_"):-len("_steps.zip")]): file for file in files}
-    for xdd in sorted(d.keys()):
+    for xdd in sorted(d.keys())[::-1]:
         r = []
-        for _ in range(5):
+        for _ in range(16):
             file = d[xdd]
             model = PPO.load(os.path.join(root, file))
             done = False
             obs = env.reset()
             while not done:
                 obs, _, done, info = env.step(model.predict(obs)[0])
-
+                env.render()
+                time.sleep(1 / 12)
+            print(info["episode"]["r"])
             r.append(info["episode"]["r"])
 
         y.append(np.mean(r))

@@ -5,3 +5,5 @@ MortalKombat2/saves
 .idea
 */__pycache__
 __pycache__
+credentials.json
+settings.yaml

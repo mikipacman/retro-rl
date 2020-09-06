@@ -5,21 +5,58 @@ import MortalKombat2
 from MortalKombat2.wrappers import FrameskipWrapper, MaxEpLenWrapper
 
 
+
+exp_name = "VeryHard_Raiden"
+exp_id = "MK-4"
+env_params = {
+    'difficulties': ["VeryHard"],
+    'arenas': ["DeadPool"],
+    'left_players': ["Scorpion"],
+    'right_players': ["Raiden"],
+    'actions': "ALL",
+    'controllable_players': 1,
+    'n_env': 16,
+}
+learn_params = {
+    'total_timesteps': int(1e7),
+    'saving_freq': int(1e4),
+    'send_video_n_epoch': 25,
+}
+wrappers_params = {
+    'frameskip': 10,
+    'max_episode_length': None,
+}
+algo_params = {
+    "algo_name": "PPO",
+    "learning_rate": 3e-4,
+    "n_steps": 2048,
+    "batch_size": 64,
+    "n_epochs": 10,
+    "gamma": 0.99,
+    "gae_lambda": 0.95,
+    "clip_range": 0.2,
+    "clip_range_vf":  None,
+    "ent_coef": 0.0,
+    "vf_coef": 0.5,
+    "max_grad_norm": 0.5,
+    "use_sde": False,
+    "sde_sample_freq": -1,
+    "target_kl": None,
+    "tensorboard_log": None,
+    "create_eval_env": False,
+    "policy_kwargs": None,
+    "verbose": 0,
+    "seed": None,
+    "device": "auto",
+}
+params = {
+    **env_params,
+    **learn_params,
+    **wrappers_params,
+    **algo_params,
+}
+
 if __name__ == '__main__':
-    params = {
-        'difficulties': ["VeryEasy"],
-        'arenas': ["DeadPool"],
-        'left_players': ["Scorpion"],
-        'right_players': ["Raiden"],
-        'frameskip': 10,
-        'actions': "ALL",
-        'max_episode_length': None,
-        'n_env': 16,
-        'controllable_players': 1,
-        'total_timesteps': int(1e7),
-        'saving_freq': int(1e4),
-        'send_video_n_epoch': 25,
-    }
 
     def make_env(params, train=True):
         clear = MortalKombat2. \
