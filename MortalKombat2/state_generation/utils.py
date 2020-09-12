@@ -25,34 +25,35 @@ def wait_for_black_screen(env, render=True):
             env.render()
 
 
-def wait_n(env, n):
+def wait_n(env, n, render=True):
     for _ in range(n):
         env.step(get_action_vec([], []))
-        env.render()
+        if render:
+            env.render()
 
 
-def choose_fighter(env):
+def choose_fighter(env, render=True):
     # Choose Fighter
     env.step(get_action_vec(["A"], []))
-    wait_n(env, 100)
+    wait_n(env, 100, render)
 
     env.step(get_action_vec([], []))
-    wait_n(env, 100)
+    wait_n(env, 100, render)
 
     # Change your player here
     env.step(get_action_vec(["A"], []))
-    wait_for_black_screen(env)
-    wait_for_black_screen(env)
+    wait_for_black_screen(env, render)
+    wait_for_black_screen(env, render)
 
     # Save State here
-    wait_n(env, 100)
+    wait_n(env, 100, render)
 
 
-def wait_for_next_menu(env):
-    wait_for_black_screen(env)
-    wait_n(env, 25)
+def wait_for_next_menu(env, render=True):
+    wait_for_black_screen(env, render)
+    wait_n(env, 25, render)
     env.step(get_action_vec(["START"], []))
-    wait_n(env, 100)
+    wait_n(env, 100, render)
 
 
 def save_state(state, name):

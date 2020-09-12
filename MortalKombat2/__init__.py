@@ -55,11 +55,14 @@ available_two_players_arenas = [
     "DeadPool"
 ]
 
+available_train_state_versions = [0, 1, 2, 3]
+available_test_state_versions = [4, 5]
+
 
 # Helper function for making nice env
 # The env makes random combination of (difficulties, arenas, left_players, right_players) after each env.reset()
-def make_mortal_kombat2_env(difficulties, arenas, left_players, right_players, controllable_players, actions,
-                            reward_weights="default", done_after="round"):
+def make_mortal_kombat2_env(difficulties, arenas, left_players, right_players, controllable_players, state_versions,
+                            actions, reward_weights="default", done_after="round"):
     states = []
 
     if controllable_players == 1:
@@ -67,15 +70,18 @@ def make_mortal_kombat2_env(difficulties, arenas, left_players, right_players, c
         assert all([a in available_arenas for a in arenas])
         assert all([r in available_opponents for r in right_players])
         assert all([l in all_fighters for l in left_players])
+        assert all([v in available_train_state_versions + available_test_state_versions for v in state_versions])
 
         for d in difficulties:
             for a in arenas:
                 for l in left_players:
                     for r in right_players:
-                        states.append(f"1p_{d}_{a}_{l}_vs_{r}")
+                        for v in state_versions:
+                            states.append(f"1p_{d}_{a}_{l}_vs_{r}_{v}")
     else:
         assert controllable_players == 2
         assert difficulties == []
+        assert state_versions == []
         assert all([r in all_fighters for r in right_players])
         assert all([l in all_fighters for l in left_players])
         assert all([a in available_two_players_arenas for a in arenas])

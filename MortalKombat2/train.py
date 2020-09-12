@@ -35,24 +35,24 @@ def make_env(params, train=True):
 
 
 neptune.init("miki.pacman/MK2")
-exp_name = "3_arenas_Raiden"
+exp_name = "2a3o_Raiden"
 env_params = {
-    'difficulties': ["Medium"],
-    'arenas': ["DeadPool", "LivingForest", "Portal"],
+    'difficulties': ["VeryEasy"],
+    'arenas': ["DeadPool", "Portal"],
     'left_players': ["Scorpion"],
-    'right_players': ["Raiden"],
+    'right_players': ["Raiden", "Jax", "Baraka"],
     'actions': "ALL",
     'controllable_players': 1,
     'n_env': 16,
 }
 learn_params = {
-    'total_timesteps': int(1e7),
+    'total_timesteps': int(2e7),
     'save_checkpoint_n_epoch': 5,
     'save_checkpoint_google_drive_path': "MK2/saves/",
     'send_video_n_epoch': 25,
 }
 wrappers_params = {
-    'frameskip': 10,
+    'frameskip': 5,
     'max_episode_length': None,
 }
 algo_params = {
