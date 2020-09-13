@@ -1,22 +1,35 @@
-import MortalKombat2
+from stable_baselines3 import PPO
+import os
+import tempfile
 import time
 
-# env = MortalKombat2.make_mortal_kombat2_env(difficulties=MortalKombat2.available_difficulties,
-#                                             arenas=MortalKombat2.available_arenas,
-#                                             left_players=MortalKombat2.all_fighters,
-#                                             right_players=MortalKombat2.available_opponents,
-#                                             controllable_players=1,
-#                                             actions="ALL")
-# for _ in range(5):
-#     env.reset()
-#     done = False
-#     while not done:
-#         _, _, done, _ = env.step(env.action_space.sample())
-#         env.render()
-#         time.sleep(1 / 120)
+from helpers.saving_utils import get_exp_params, GoogleDriveCheckpointer
 
-folder = drive.CreateFile({'title': 'folder', 'mimeType': 'application/vnd.google-apps.folder'})
-folder.Upload() # Upload the file.
+# Needed for loading pickle
+from MortalKombat2.wrappers import FrameskipWrapper, MaxEpLenWrapper
+from stable_baselines3.common.atari_wrappers import WarpFrame
+from stable_baselines3.common.monitor import Monitor
+import MortalKombat2
 
-file = drive.CreateFile({'title': 'file.txt', 'parents': [{"id": folder["id"], "kind": "drive#childList"}]})
-file.Upload()
+project_name = "miki.pacman/MK2"
+google_drive_checkpoints_path = "MK2/saves"
+exp_id = "MK-16"
+params = get_exp_params(exp_id, project_name)
+
+
+with tempfile.TemporaryDirectory(dir="/tmp") as temp:
+    checkpointer = GoogleDriveCheckpointer(project_experiments_path=google_drive_checkpoints_path, exp_id=exp_id)
+    checkpoint = checkpointer.get_list_of_checkpoints()[-1]
+    checkpointer.download_checkpoints([checkpoint], temp)
+
+    env = params["env_function"](params, train=True)
+    model = PPO.load(os.path.join(temp, checkpoint))
+
+    done = False
+    obs = env.reset()
+    while not done:
+        obs, _, done, info = env.step(model.predict(obs)[0])
+        env.render()
+        time.sleep(1 / 12)
+
+    print(info["episode"])
