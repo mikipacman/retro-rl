@@ -36,14 +36,14 @@ def make_experiment_env(params, train):
         return clear, env, env
 
 
-neptune.init("miki.pacman/sandbox")
-exp_name = "best_test"
+neptune.init("miki.pacman/MK2")
+exp_name = "VeryEasy_Raiden_one_state"
 env_params = {
     'difficulties': ["VeryEasy"],
     'arenas': ["DeadPool"],
     'left_players': ["Scorpion"],
     'right_players': ["Raiden"],
-    'state_versions': [0, 1, 2, 3],
+    'state_versions': [0],
     'actions': "ALL",
     'controllable_players': 1,
     'n_env': 16,
