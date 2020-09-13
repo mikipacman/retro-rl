@@ -23,6 +23,7 @@ class MK2Wrapper(gym.Wrapper):
         self._cumulative_reward = np.array([0.] * self._players)
         self._steps = 0
         self._states = states
+        self._current_state = np.random.choice(self._states)
 
     def step(self, action):
         obs, rew, _, info = self.env.step(action)
@@ -77,6 +78,19 @@ class MK2Wrapper(gym.Wrapper):
         info["steps"] = self._steps
         info["cum_rew"] = self._cumulative_reward
 
+        if self._current_state[0] == '1':
+            _, d, a, l, _, r, v = self._current_state.split("_")
+            info["difficulty"] = d
+            info["arena"] = a
+            info["P1"] = l
+            info["P2"] = r
+            info["state_version"] = v
+        elif self._current_state[0] == '2':
+            _, a, l, _, r = self._current_state.split("_")
+            info["arena"] = a
+            info["P1"] = l
+            info["P2"] = r
+
         return info
 
     def reset(self, **kwargs):
@@ -86,7 +100,8 @@ class MK2Wrapper(gym.Wrapper):
         self._in_game = True
         self._cumulative_reward = np.array([0.] * self._players)
         self._steps = 0
-        self.env.load_state(np.random.choice(self._states))
+        self._current_state = np.random.choice(self._states)
+        self.env.load_state( self._current_state)
         return self.env.reset(**kwargs)
 
     def observation(self, frame):

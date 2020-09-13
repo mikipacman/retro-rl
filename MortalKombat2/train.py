@@ -29,7 +29,8 @@ def make_experiment_env(params, train):
     env = WarpFrame(env, 48, 48)
 
     if train:
-        env = Monitor(env, info_keywords=("P1_rounds", "P2_rounds", "P1_health", "P2_health", "steps"))
+        env = Monitor(env, info_keywords=("P1_rounds", "P2_rounds", "P1_health", "P2_health", "steps",
+                                          "difficulty", "arena", "P1", "P2", "state_version"))
         return env
     else:
         return clear, env, env
