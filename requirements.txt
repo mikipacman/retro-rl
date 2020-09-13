@@ -16,3 +16,4 @@ pyglet
 numpy
 PyDrive
 dill
+seaborn

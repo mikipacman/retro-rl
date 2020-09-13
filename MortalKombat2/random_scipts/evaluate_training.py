@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 import tempfile
+import re
 
 from helpers.saving_utils import get_exp_params, GoogleDriveCheckpointer
 
@@ -17,7 +18,6 @@ google_drive_checkpoints_path = "MK2/saves"
 exp_id = "SAN-2089"
 params = get_exp_params(exp_id, project_name)
 
-
 with tempfile.TemporaryDirectory(dir="/tmp") as temp:
     checkpointer = GoogleDriveCheckpointer(project_experiments_path=google_drive_checkpoints_path, exp_id=exp_id)
     checkpoints_list = checkpointer.get_list_of_checkpoints()
@@ -27,17 +27,16 @@ with tempfile.TemporaryDirectory(dir="/tmp") as temp:
 
     x, y = [], []
     for root, _, files in os.walk(temp):
-        d = {int(file[len("rl_model_"):-len("_steps.zip")]): file for file in files[:-1]}
+        d = {int(re.findall(r"\d+", file)[-1]): file for file in files}
         for xdd in sorted(d.keys())[::-1]:
             r = []
-            for _ in range(8):
+            for _ in range(4):
                 file = d[xdd]
                 model = PPO.load(os.path.join(root, file))
                 done = False
                 obs = env.reset()
                 while not done:
                     obs, _, done, info = env.step(model.predict(obs)[0])
-                print(info["episode"]["r"])
                 r.append(info["episode"]["r"])
 
             y.append(np.mean(r))
