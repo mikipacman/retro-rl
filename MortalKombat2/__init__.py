@@ -2,6 +2,7 @@ import numpy as np
 from MortalKombat2.wrappers import MK2Wrapper
 import retro
 
+
 # Constants
 game_name = "MortalKombatII-Genesis"
 
@@ -34,6 +35,13 @@ all_arenas = [
 # Available game data
 # States are hard to generate and their number grows quickly so not all
 # opponents arenas and difficulties are available, however it is possible to generate more
+available_fighters = [
+    "Raiden",
+    "Jax",
+    "Baraka",
+    "SubZero",
+    "Scorpion"
+]
 available_opponents = [
     "Raiden",
     "Jax",
@@ -55,8 +63,8 @@ available_two_players_arenas = [
     "DeadPool"
 ]
 
-available_train_state_versions = [0, 1, 2, 3]
-available_test_state_versions = [4, 5]
+available_train_state_versions = list(range(0, 24))
+available_test_state_versions = list(range(24, 32))
 
 
 # Helper function for making nice env
@@ -69,7 +77,7 @@ def make_mortal_kombat2_env(difficulties, arenas, left_players, right_players, c
         assert all([d in available_difficulties for d in difficulties])
         assert all([a in available_arenas for a in arenas])
         assert all([r in available_opponents for r in right_players])
-        assert all([l in all_fighters for l in left_players])
+        assert all([l in available_fighters for l in left_players])
         assert all([v in available_train_state_versions + available_test_state_versions for v in state_versions])
 
         for d in difficulties:

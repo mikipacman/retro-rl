@@ -1,30 +1,23 @@
 from stable_baselines3.common.callbacks import BaseCallback
-from pydrive.drive import GoogleDrive
-from pydrive.auth import GoogleAuth
 import tempfile
 import os
 import neptune
 import time
 import numpy as np
 from helpers.interactive_env_recorder import InteractiveEnvRecorder
+from helpers.saving_utils import GoogleDriveCheckpointer
 import base64
 
 
 class GoogleDriveCheckpointCallback(BaseCallback):
     def __init__(self, exp, save_checkpoint_n_epoch, save_path, name_prefix="rl_model", verbose=0):
         super(GoogleDriveCheckpointCallback, self).__init__(verbose)
+        self._checkpointer = GoogleDriveCheckpointer(save_path, exp.id)
         self._exp = exp
         self._save_checkpoint_n_epoch = save_checkpoint_n_epoch
         self._save_path = save_path
         self._name_prefix = name_prefix
-        self._drive = GoogleDrive(GoogleAuth())
         self._iteration = 0
-
-    def _init_callback(self) -> None:
-        parent_id = None
-        for folder_name in self._save_path.strip("/").split("/"):
-            parent_id = self._get_folder(folder_name, parent_id)
-        self._exp_folder_id = self._get_folder(self._exp.id, parent_id)
 
     def _on_step(self):
         return True
@@ -32,44 +25,13 @@ class GoogleDriveCheckpointCallback(BaseCallback):
     def _on_rollout_end(self):
         if self._iteration % self._save_checkpoint_n_epoch == 0:
             name = f"{self._name_prefix}_{self._iteration}_{self.num_timesteps}_steps.zip"
-            self._upload_checkpoint(name)
+            self._checkpointer.upload_checkpoint(name, self.model)
 
         self._iteration += 1
 
     def _on_training_end(self):
         name = f"{self._name_prefix}_last_{self.num_timesteps}_steps.zip"
-        self._upload_checkpoint(name)
-
-    def _upload_checkpoint(self, name):
-        with tempfile.TemporaryDirectory(dir="/tmp") as temp:
-            path = os.path.join(temp, name)
-            self.model.save(path)
-
-            file = self._drive.CreateFile({'title': name, 'parents': [{"id": self._exp_folder_id}]})
-            file.SetContentFile(path)
-            file.Upload()
-
-            if self.verbose > 1:
-                print(f"uploaded {name} to {self._save_path.strip('/')}/{self._exp.id} on google drive ")
-
-    def _add_folder(self, name, parent):
-        meta = {'title': name, 'mimeType': 'application/vnd.google-apps.folder'}
-        if parent:
-            meta.update({"parents": [{"id": parent}]})
-        folder = self._drive.CreateFile(meta)
-        folder.Upload()
-        return folder["id"]
-
-    def _get_folder(self, title, parent):
-        folder_list = self._drive.ListFile({'q': "trashed=false"}).GetList()
-
-        if parent:
-            folder_list = [f for f in folder_list if parent in f["parents"][0]["id"]]
-        if title not in [f["title"] for f in folder_list]:
-            folder_id = self._add_folder(title, parent)
-        else:
-            folder_id = [f["id"] for f in folder_list if f["title"] == title][0]
-        return folder_id
+        self._checkpointer.upload_checkpoint(name, self.model)
 
 
 class NeptuneLogger(BaseCallback):
@@ -151,7 +113,7 @@ class NeptuneLogger(BaseCallback):
                    f'src="data:video/mp4;base64,{encoded.decode("utf-8")}"></video>'
             open(path_to_video, "w+").write(html)
 
-            neptune.send_artifact(path_to_video, f"movie_{self._iteration}_{self._context.num_timesteps}.html")
+            neptune.send_artifact(path_to_video, f"movies/movie_{self._iteration}_{self._context.num_timesteps}.html")
 
 
 def get_callbacks(params, exp, make_env_function):
