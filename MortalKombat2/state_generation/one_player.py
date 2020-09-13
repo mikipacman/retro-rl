@@ -7,17 +7,18 @@ import time
 difficulties = ["VeryEasy", "Medium", "VeryHard"]
 arenas = ["DeadPool", "LivingForest", "Portal"]
 opponents = ["Raiden", "Jax", "SubZero", "Scorpion", "Baraka"]
-versions = range(6)
+left_players = available_opponents
+versions = range(32)
 
 counter = 0
-num_to_generate = len(difficulties) * len(arenas) * len(opponents) * len(versions) * len(all_fighters)
+num_to_generate = len(difficulties) * len(arenas) * len(opponents) * len(versions) * len(left_players)
 start = time.time()
 
 for difficulty in difficulties:
     for arena in arenas:
         for opp in opponents:
-            for version in versions:
-                for p1 in all_fighters:
+            for p1 in left_players:
+                for version in versions:
                     env = retro.make(game_name, players=2, state=f"{difficulty}_{arena}_{opp}_{version}")
                     env.reset()
 

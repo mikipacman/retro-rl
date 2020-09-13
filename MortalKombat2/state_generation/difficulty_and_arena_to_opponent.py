@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 # Params:
 path_for_bars = "fighters_bars/"
 path_for_states_to_save = "states/1p/by_difficulty_arena_and_opponent/"
-minimum_states_per_opponent = 6
+minimum_states_per_opponent = 32
 difficulties_to_generate_from = ["VeryEasy", "Medium", "VeryHard"]
 arenas_to_generate_from = ["DeadPool", "Portal", "LivingForest"]
 # cords of opponent bar: [15:25, -145:-23, :]
