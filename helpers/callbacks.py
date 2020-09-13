@@ -151,7 +151,7 @@ class NeptuneLogger(BaseCallback):
                    f'src="data:video/mp4;base64,{encoded.decode("utf-8")}"></video>'
             open(path_to_video, "w+").write(html)
 
-            neptune.send_artifact(path_to_video, f"movie_{self._iteration}_{self._context.num_timesteps}.html")
+            neptune.send_artifact(path_to_video, f"movies/movie_{self._iteration}_{self._context.num_timesteps}.html")
 
 
 def get_callbacks(params, exp, make_env_function):

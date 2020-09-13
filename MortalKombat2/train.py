@@ -1,4 +1,3 @@
-import MortalKombat2
 from stable_baselines3 import PPO
 from stable_baselines3.ppo import CnnPolicy
 from stable_baselines3.common.vec_env import SubprocVecEnv
@@ -7,18 +6,20 @@ import neptune
 from MortalKombat2.wrappers import FrameskipWrapper, MaxEpLenWrapper
 from stable_baselines3.common.atari_wrappers import WarpFrame
 from stable_baselines3.common.monitor import Monitor
+import MortalKombat2
 
 from helpers.callbacks import get_callbacks
+from helpers.saving_utils import save_exp_params
 
 
-def make_env(params, train=True):
-    clear = MortalKombat2. \
-        make_mortal_kombat2_env(difficulties=params["difficulties"],
-                                arenas=params["arenas"],
-                                left_players=params["left_players"],
-                                right_players=params["right_players"],
-                                controllable_players=params["controllable_players"],
-                                actions=params["actions"])
+def make_experiment_env(params, train):
+    clear = MortalKombat2.make_mortal_kombat2_env(difficulties=params["difficulties"],
+                                                arenas=params["arenas"],
+                                                left_players=params["left_players"],
+                                                right_players=params["right_players"],
+                                                controllable_players=params["controllable_players"],
+                                                actions=params["actions"],
+                                                state_versions=params["state_versions"])
 
     env = FrameskipWrapper(clear, skip=params["frameskip"])
 
@@ -33,26 +34,27 @@ def make_env(params, train=True):
     else:
         return clear, env, env
 
-
-neptune.init("miki.pacman/MK2")
-exp_name = "2a3o_Raiden"
+neptune.init("miki.pacman/sandbox")
+exp_name = "test"
 env_params = {
     'difficulties': ["VeryEasy"],
-    'arenas': ["DeadPool", "Portal"],
+    'arenas': ["DeadPool"],
     'left_players': ["Scorpion"],
-    'right_players': ["Raiden", "Jax", "Baraka"],
+    'right_players': ["Raiden"],
+    'state_versions': [0, 1, 2, 3],
     'actions': "ALL",
     'controllable_players': 1,
-    'n_env': 16,
+    'n_env': 1,
+    'env_function': make_experiment_env,
 }
 learn_params = {
-    'total_timesteps': int(2e7),
+    'total_timesteps': int(1e4),
     'save_checkpoint_n_epoch': 5,
     'save_checkpoint_google_drive_path': "MK2/saves/",
     'send_video_n_epoch': 25,
 }
 wrappers_params = {
-    'frameskip': 5,
+    'frameskip': 10,
     'max_episode_length': None,
 }
 algo_params = {
@@ -89,8 +91,11 @@ if __name__ == "__main__":
     }
 
     with neptune.create_experiment(name=exp_name, params=params) as exp:
-        env = SubprocVecEnv([lambda: make_env(params) for _ in range(params["n_env"])], start_method="forkserver")
+        save_exp_params(params)
+
+        video_env_function = lambda: params["env_function"](params, train=False)
+        env = SubprocVecEnv([lambda: params["env_function"](params, train=True)
+                             for _ in range(params["n_env"])], start_method="forkserver")
         model = PPO(CnnPolicy, env)
 
-        f = lambda: make_env(params, train=False)
-        model.learn(total_timesteps=params["total_timesteps"], callback=get_callbacks(params, exp, f))
+        model.learn(total_timesteps=params["total_timesteps"], callback=get_callbacks(params, exp, video_env_function))

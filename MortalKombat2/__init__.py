@@ -2,6 +2,7 @@ import numpy as np
 from MortalKombat2.wrappers import MK2Wrapper
 import retro
 
+
 # Constants
 game_name = "MortalKombatII-Genesis"
 
