@@ -4,6 +4,20 @@ gym in order to run a tournament between RL agents trained in retro games enviro
 I'm focusing on fighting games like Street Fighter and Mortal Kombat. I'm planning on testing
 selfplay techniques on these envs.
 
+# Before you pip install
+```
+sudo apt-get update
+
+sudo apt-get install git python3-dev python3-numpy libsdl-image1.2-dev libsdl-mixer1.2-dev libsdl-ttf2.0-dev libsmpeg-dev libsdl1.2-dev libportmidi-dev libswscale-dev libavformat-dev libavcodec-dev libfreetype6-dev 
+
+sudo apt-get install python3-mpi4py
+
+sudo apt-get install swig
+
+sudo apt-get install libportaudio2
+```
+
+
 # How to run those scripts?
 - create empty conda env
 - `pip install -r requirements.txt`
