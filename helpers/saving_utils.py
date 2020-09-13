@@ -4,7 +4,7 @@ import neptune
 import dill as pickle
 import tempfile
 import os
-
+from datetime import datetime
 
 params_pickle_name = "params.pkl"
 
@@ -37,7 +37,9 @@ class GoogleDriveCheckpointer():
     def get_list_of_checkpoints(self):
         path_to_experiment = os.path.join(self._project_experiments_path, self._exp_id)
         folder = self._get_folder(path_to_experiment)
-        return [x["title"] for x in self._get_children_list(folder["id"])]
+        children = self._get_children_list(folder["id"])
+        children = sorted(children, key=lambda x: datetime.strptime(x["createdDate"], "%Y-%m-%dT%H:%M:%S.%fZ"))
+        return [x["title"] for x in children]   # '2020-09-13T10:01:03.998Z'
 
     def download_checkpoints(self, checkpoints, destination_path):
         path_to_experiment = os.path.join(self._project_experiments_path, self._exp_id)

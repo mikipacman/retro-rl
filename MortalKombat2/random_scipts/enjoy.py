@@ -19,11 +19,15 @@ params = get_exp_params(exp_id, project_name)
 
 with tempfile.TemporaryDirectory(dir="/tmp") as temp:
     checkpointer = GoogleDriveCheckpointer(project_experiments_path=google_drive_checkpoints_path, exp_id=exp_id)
-    checkpoint = checkpointer.get_list_of_checkpoints()[-1]
+    checkpoints = checkpointer.get_list_of_checkpoints()
+    checkpoint = checkpoints[-1]
     checkpointer.download_checkpoints([checkpoint], temp)
 
     env = params["env_function"](params, train=True)
     model = PPO.load(os.path.join(temp, checkpoint))
+
+    print(checkpoints)
+    print(f"loaded {checkpoint} checkpoint")
 
     done = False
     obs = env.reset()
