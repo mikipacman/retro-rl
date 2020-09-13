@@ -13,14 +13,14 @@ from helpers.saving_utils import save_exp_params
 
 
 def make_experiment_env(params, train):
-    clear = MortalKombat2.make_mortal_kombat2_env(difficulties=params["difficulties"],
-                                                arenas=params["arenas"],
-                                                left_players=params["left_players"],
-                                                right_players=params["right_players"],
-                                                controllable_players=params["controllable_players"],
-                                                actions=params["actions"],
-                                                state_versions=params["state_versions"])
-
+    clear = MortalKombat2.\
+        make_mortal_kombat2_env(difficulties=params["difficulties"],
+                                arenas=params["arenas"],
+                                left_players=params["left_players"],
+                                right_players=params["right_players"],
+                                controllable_players=params["controllable_players"],
+                                actions=params["actions"],
+                                state_versions=params["state_versions"])
     env = FrameskipWrapper(clear, skip=params["frameskip"])
 
     if params["max_episode_length"]:
@@ -34,8 +34,9 @@ def make_experiment_env(params, train):
     else:
         return clear, env, env
 
+
 neptune.init("miki.pacman/sandbox")
-exp_name = "test"
+exp_name = "best_test"
 env_params = {
     'difficulties': ["VeryEasy"],
     'arenas': ["DeadPool"],
@@ -44,11 +45,11 @@ env_params = {
     'state_versions': [0, 1, 2, 3],
     'actions': "ALL",
     'controllable_players': 1,
-    'n_env': 1,
+    'n_env': 16,
     'env_function': make_experiment_env,
 }
 learn_params = {
-    'total_timesteps': int(1e4),
+    'total_timesteps': int(2e7),
     'save_checkpoint_n_epoch': 5,
     'save_checkpoint_google_drive_path': "MK2/saves/",
     'send_video_n_epoch': 25,

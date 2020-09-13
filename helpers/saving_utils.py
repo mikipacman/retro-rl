@@ -26,3 +26,65 @@ def get_exp_params(exp_name, project_name):
             return pickle.load(open(os.path.join(temp, params_pickle_name), "rb"))
     else:
         raise Exception("Wrong exp id!")
+
+
+class GoogleDriveCheckpointer():
+    def __init__(self, project_experiments_path, exp_id):
+        self._drive = GoogleDrive(GoogleAuth())
+        self._project_experiments_path = project_experiments_path
+        self._exp_id = exp_id
+
+    def get_list_of_checkpoints(self):
+        path_to_experiment = os.path.join(self._project_experiments_path, self._exp_id)
+        folder = self._get_folder(path_to_experiment)
+        return [x["title"] for x in self._get_children_list(folder["id"])]
+
+    def download_checkpoints(self, checkpoints, destination_path):
+        path_to_experiment = os.path.join(self._project_experiments_path, self._exp_id)
+        folder = self._get_folder(path_to_experiment)
+        children = self._get_children_list(folder["id"])
+        children_to_download = [c for c in children if c["title"] in checkpoints]
+        for c in children_to_download:
+            c.GetContentFile(os.path.join(destination_path, c["title"]))
+
+    def upload_checkpoint(self, name, model):
+        path_to_experiment = os.path.join(self._project_experiments_path, self._exp_id)
+        folder = self._get_folder(path_to_experiment, create=True)
+        with tempfile.TemporaryDirectory(dir="/tmp") as temp:
+            path = os.path.join(temp, name)
+            model.save(path)
+
+            file = self._drive.CreateFile({'title': name, 'parents': [{"id": folder["id"]}]})
+            file.SetContentFile(path)
+            file.Upload()
+
+    def _add_folder(self, name, parent):
+        meta = {'title': name, 'mimeType': 'application/vnd.google-apps.folder'}
+        if parent:
+            meta.update({"parents": [{"id": parent}]})
+        folder = self._drive.CreateFile(meta)
+        folder.Upload()
+        return folder
+
+    def _get_children_list(self, parent):
+        q = "trashed=false"
+        if parent:
+            q += f" and '{parent}' in parents"
+        return self._drive.ListFile({'q': q}).GetList()
+
+    def _get_folder(self, path, create=False):
+        parent = {}
+        for sub_path in path.strip("/").split("/"):
+            parent = self._get_folder_one_level(sub_path, parent.get("id"), create)
+
+        return parent
+
+    def _get_folder_one_level(self, title, parent, create=False):
+        folder_list = self._get_children_list(parent)
+
+        if title in [f["title"] for f in folder_list]:
+            return [f for f in folder_list if f["title"] == title][0]
+        elif create:
+            return self._add_folder(title, parent)
+        else:
+            raise Exception("Folder does not exist!")
