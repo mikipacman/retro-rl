@@ -4,7 +4,7 @@ import os
 import neptune
 import time
 import numpy as np
-from helpers.interactive_env_recorder import InteractiveEnvRecorder
+from helpers.interactive_env_recorder import PygameInteractiveEnvRecorder
 from helpers.saving_utils import GoogleDriveCheckpointer
 import base64
 
@@ -93,20 +93,22 @@ class NeptuneLogger(BaseCallback):
         env_main, env1, env2 = self._env_func()
         with tempfile.TemporaryDirectory(dir="/tmp") as temp:
             path_to_video = os.path.join(temp, "movie.mp4")
-            ia = InteractiveEnvRecorder(env=env_main,
-                                        p1=self.model,
-                                        p1_env=env1,
-                                        p1_frameskip=self._params["frameskip"],
-                                        p2="human",
-                                        p2_env=env2,
-                                        p2_frameskip=1,
-                                        record_output_path=path_to_video,
-                                        close_after_done=True,
-                                        record_n_frames_after_done=300,
-                                        resize_video=2,
-                                        show_on_screen=False)
-            ia.run()
-            del ia
+            PygameInteractiveEnvRecorder(env=env_main,
+                                         fps=60,
+                                         win_size=(640 * 1.5, 480 * 1.5),
+                                         p1={
+                                             "policy": self.model,
+                                             "env": env1,
+                                             "frameskip": self._params["frameskip"],
+                                         },
+                                         p2={
+                                             "policy": "human",
+                                             "env": env2,
+                                             "frameskip": 1,
+                                         },
+                                         record_output_path=path_to_video,
+                                         render_n_frames_after_done=250,
+                                         render=False).run()
 
             encoded = base64.b64encode(open(path_to_video, "rb").read())
             html = f'<video controls><source type="video/mp4" ' \

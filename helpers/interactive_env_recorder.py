@@ -1,272 +1,141 @@
-import ctypes
-import abc
-import time
-
-import pyglet
-from pyglet import gl
-from pyglet.window import key as keycodes
 import numpy as np
-import sounddevice as sd
 from PIL import Image, ImageDraw, ImageFont
 import tempfile
 import cv2
 import moviepy.editor as mpe
 import soundfile as sf
 
+import pygame
 
-class RealTimeVideoPlayer(abc.ABC):
-    """
-    Base class for making gym environments interactive for human use
-    """
-    def __init__(self, sync=True, tps=60, width=1000, sound_buffer_len=12, show_on_screen=True):
-        if not show_on_screen:
-            tps = 1000
 
-        if show_on_screen:
-            self._image, _ = self.get_image_and_sound([])
-            assert len(self._image.shape) == 3 and self._image.shape[2] == 3, 'must be an RGB image'
-            image_height, image_width = self._image.shape[:2]
+class PygameInteractiveEnvRecorder():
+    inputs = {
+        'BUTTON': 'Z',
+        'A': 'F',
+        'B': 'G',
+        'C': 'H',
+        'X': 'R',
+        'Y': 'T',
+        'Z': 'Y',
+        'L': 'Z',
+        'R': 'C',
+        'UP': 'W',
+        'DOWN': 'S',
+        'LEFT': 'A',
+        'RIGHT': 'D',
+        'MODE': 'Q',
+        'SELECT': 'TAB',
+        'RESET': 'ENTER',
+        'START': 'E',
+    }
 
-            aspect_ratio = image_width / image_height
-            win_width = width
-            win_height = int(win_width / aspect_ratio)
+    def __init__(self, fps, env, p1, p2, win_size=(640 * 2, 480 * 2), render=True,
+                 render_n_frames_after_done=0, record_output_path=None):
+        self.fps = fps
+        self.env = env
+        self.buttons = env.buttons
+        self.win_size = (int(win_size[0]), int(win_size[1]))
+        self.render = render
+        self.render_n_frames_after_done = render_n_frames_after_done
 
-            win = pyglet.window.Window(width=win_width, height=win_height)
+        assert type(p1) == type(p2) == dict
+        assert set(p1.keys()) == set(p2.keys()) == {'policy', 'frameskip', 'env'}
+        self.p1 = p1
+        self.p2 = p2
+        self.p1_actions = self.p2_actions = [0] * 12
 
-            self._key_handler = pyglet.window.key.KeyStateHandler()
-            win.push_handlers(self._key_handler)
-            win.on_close = self.on_close
+        env.reset()
+        self.sound_rate = env.em.get_audio_rate()
+        self.sound_buffer = np.array([[0, 0]], dtype=np.dtype('int16'))
+        self.sound_buffer_len = 12
 
-            gl.glEnable(gl.GL_TEXTURE_2D)
-            self._texture_id = gl.GLuint(0)
-            gl.glGenTextures(1, ctypes.byref(self._texture_id))
-            gl.glBindTexture(gl.GL_TEXTURE_2D, self._texture_id)
-            gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_WRAP_S, gl.GL_CLAMP)
-            gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_WRAP_T, gl.GL_CLAMP)
-            gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MAG_FILTER, gl.GL_NEAREST)
-            gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MIN_FILTER, gl.GL_NEAREST)
-            gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_RGBA8, image_width, image_height, 0, gl.GL_RGB, gl.GL_UNSIGNED_BYTE, None)
+        if render:
+            pygame.init()
+            pygame.display.set_caption("Interactive Env")
+            self.win = pygame.display.set_mode(win_size, 0, 32)
+            self.clock = pygame.time.Clock()
 
-            self._win = win
+        self.record_output_path = record_output_path
+        self.images = []
+        self.sounds = np.array([[0, 0]])
 
-        self._key_previous_states = {}
-
-        self._tps = tps
-        self._sync = sync
-        self._current_time = 0
-        self._sim_time = 0
-        self._max_sim_frames_per_update = 4
-
-        self._sound_buffer = np.array([])
-        self._rate = self.get_audio_rate()
-        self._steps = 0
-        self._sound_buffer_len = sound_buffer_len
-
-        self._show_on_screen = show_on_screen
-        self._continue = True
-
-    def _update(self, dt):
-        # cap the number of frames rendered so we don't just spend forever trying to catch up on frames
-        # if rendering is slow
-        max_dt = self._max_sim_frames_per_update / self._tps
-        if dt > max_dt:
-            dt = max_dt
-
-        # catch up the simulation to the current time
-        self._current_time += dt
-        while self._sim_time < self._current_time and self._continue:
-            self._sim_time += 1 / self._tps
-
-            if self._show_on_screen:
-
-                keys_clicked = set()
-                keys_pressed = set()
-                for key_code, pressed in self._key_handler.items():
-                    if pressed:
-                        keys_pressed.add(key_code)
-
-                    if not self._key_previous_states.get(key_code, False) and pressed:
-                        keys_clicked.add(key_code)
-                    self._key_previous_states[key_code] = pressed
-
-                if keycodes.ESCAPE in keys_pressed:
-                    self.on_close()
-
-                # assume that for async environments, we just want to repeat keys for as long as they are held
-                inputs = keys_pressed
-                if self._sync:
-                    inputs = keys_clicked
-
-            keys = []
-            if self._show_on_screen:
-                for keycode in inputs:
-                    for name in dir(keycodes):
-                        if getattr(keycodes, name) == keycode:
-                            keys.append(name)
-
-            self._image, sounds = self.get_image_and_sound(keys)
-            self._steps += 1
-
-            if self._show_on_screen:
-                if self._steps % self._sound_buffer_len == 0:
-                    sd.play(self._sound_buffer / 10000, int(self._rate))
-                    self._sound_buffer = np.array(sounds)
-                else:
-                    self._sound_buffer = np.append(self._sound_buffer, sounds)
-
-    def _draw(self):
-        gl.glBindTexture(gl.GL_TEXTURE_2D, self._texture_id)
-        video_buffer = ctypes.cast(self._image.tobytes(), ctypes.POINTER(ctypes.c_short))
-        gl.glTexSubImage2D(gl.GL_TEXTURE_2D, 0, 0, 0, self._image.shape[1], self._image.shape[0], gl.GL_RGB, gl.GL_UNSIGNED_BYTE, video_buffer)
-
-        x = 0
-        y = 0
-        w = self._win.width
-        h = self._win.height
-
-        pyglet.graphics.draw(
-            4,
-            pyglet.gl.GL_QUADS,
-            ('v2f', [x, y, x + w, y, x + w, y + h, x, y + h]),
-            ('t2f', [0, 1, 1, 1, 1, 0, 0, 0]),
-        )
-
-    @abc.abstractmethod
-    def on_close(self):
-        pass
-
-    @abc.abstractmethod
-    def get_image_and_sound(self, keys):
-        pass
-
-    @abc.abstractmethod
-    def get_audio_rate(self):
-        pass
+        self.step_count = 0
 
     def run(self):
-        """
-        Run the interactive window until the user quits
-        """
-        # pyglet.app.run() has issues like https://bitbucket.org/pyglet/pyglet/issues/199/attempting-to-resize-or-close-pyglet
-        # and also involves inverting your code to run inside the pyglet framework
-        # avoid both by using a while loop
-        prev_frame_time = time.time()
-        while self._continue:
-            if self._show_on_screen:
-                self._win.switch_to()
-                self._win.dispatch_events()
-            now = time.time()
-            self._update(now - prev_frame_time)
-            prev_frame_time = now
-            if self._show_on_screen:
-                self._draw()
-                self._win.flip()
+        done = False
 
+        obs = self.env.reset()
+        sound = self.env.em.get_audio()
+        actions = self._get_actions(obs)
+        im = self._get_full_image(obs, {}, actions)
+        self._render_frame_and_sound(im, sound)
 
-class InteractiveEnvRecorder(RealTimeVideoPlayer):
-    def __init__(self, env,
-                 p1, p2,
-                 p1_frameskip, p2_frameskip,
-                 p1_env, p2_env,
-                 width=1200,
-                 record_output_path=None,
-                 record_n_frames_after_done=0,
-                 close_after_done=False,
-                 resize_video=1,
-                 show_on_screen=True):
-        self._env = env
-        self._p1 = p1
-        self._p2 = p2
-        self._p1_frameskip = p1_frameskip
-        self._p2_frameskip = p2_frameskip
-        self._p1_env = p1_env
-        self._p2_env = p2_env
-        self._p1_frame = None
-        self._p2_frame = None
-        self._p1_act = None
-        self._p2_act = None
+        while not done or self.render_n_frames_after_done > 0:
+            self.step_count += 1
 
-        self._buttons = env.buttons
-        self._players = env.action_space.shape[0] // 12  # Probably Genesis-specific but who cares
-        self._width = width
-        self._steps = 0
+            obs, rew, done, info = self.env.step(actions)
+            sound = self.env.em.get_audio()
+            actions = self._get_actions(obs)
+            im = self._get_full_image(obs, info, actions)
+            self._render_frame_and_sound(im, sound)
 
-        if record_output_path:
-            assert close_after_done
+            if done:
+                self.render_n_frames_after_done -= 1
 
-        self._record_output_path = record_output_path
-        self._n_frames_to_close_left = record_n_frames_after_done
-        self._close_after_done = close_after_done
-        self._should_be_closed = False
-        self._resize = resize_video
+        self.on_close()
 
-        self._images = []
-        self._sounds = np.array([])
+    def _render_frame_and_sound(self, frame, sound):
+        self.images.append(frame)
+        self.sounds = np.append(self.sounds, sound[:, 0])
 
-        self._env.reset()
+        if self.render:
+            # image
+            frame = np.transpose(frame, axes=(1, 0, 2))
+            surf = pygame.surfarray.make_surface(frame)
+            self.win.blit(surf, (0, 0))
+            pygame.display.update()
 
-        super().__init__(sync=False, tps=60, width=width, show_on_screen=show_on_screen)
+            # sound
+            if self.step_count % self.sound_buffer_len == 0:
+                pygame.mixer.Sound(array=self.sound_buffer).play()
+                self.sound_buffer = np.array(sound, dtype=np.dtype('int16'))
+            else:
+                self.sound_buffer = np.append(self.sound_buffer, sound[::2, :], axis=0)
 
-    def get_audio_rate(self):
-        return self._env.em.get_audio_rate() * 0.85  # for eliminating clipping in real time sound generation
+            self.clock.tick(self.fps)
 
-    def on_close(self):
-        if self._record_output_path:
-            # Ugly as hell but I don't care, it works :>
-            audio_rate = self._env.em.get_audio_rate()
-            resized_shape = (int(self._images[0].shape[1] * self._resize), int(self._images[0].shape[0] * self._resize))
-            with tempfile.TemporaryDirectory(dir="/tmp") as temp:
-                fps = len(self._images) / (len(self._sounds) / audio_rate)
-                writer = cv2.VideoWriter(temp + '/tmp_vid.mp4', cv2.VideoWriter_fourcc(*'mp4v'),
-                                         fps, resized_shape)
+    def _get_keyboard_actions(self):
+        pygame.event.pump()
+        keys = pygame.key.get_pressed()
 
-                for img in self._images:
-                    img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-                    img = cv2.resize(img, resized_shape, interpolation=cv2.INTER_AREA)
-                    writer.write(img)
+        def get_buttons_vec(d):
+            return [keys[ord(d[k].lower())]for k in self.buttons]
 
-                sf.write(temp + '/tmp_sound.flac', self._sounds / (max(self._sounds) * 2), int(audio_rate))
+        return get_buttons_vec(self.inputs) + [0] * 12
 
-                cv2.destroyAllWindows()
-                writer.release()
+    def _get_actions(self, obs):
+        keyboard_actions = self._get_keyboard_actions()
 
-                my_clip = mpe.VideoFileClip(temp + '/tmp_vid.mp4')
-                audio_background = mpe.AudioFileClip(temp + '/tmp_sound.flac')
-                final_clip = my_clip.set_audio(audio_background)
-                final_clip.write_videofile(self._record_output_path, logger=None)
+        if self.step_count % self.p1["frameskip"] == 0:
+            self.p1_obs = self.p1["env"].observation(obs)
 
-        self._env.close()
-        self._continue = False
+        if self.p1["policy"] != "human" and self.step_count % self.p1["frameskip"] == 0:
+            self.p1_actions = self.p1["policy"].predict(self.p1_obs)[0]
+        keyboard_actions[:12] = self.p1_actions
 
-    def get_image_and_sound(self, keys):
-        main_frame = self._env.render(mode="rgb_array")
-        act = self._keys_to_act(keys)
+        if self.step_count % self.p2["frameskip"] == 0:
+            self.p2_obs = self.p2["env"].observation(obs)
 
-        if self._steps % self._p1_frameskip == 0:
-            self._p1_frame = self._p1_env.observation(main_frame)
-            if self._p1 != "human":
-                self._p1_act = self._p1.predict(self._p1_frame)[0]
-                act[:12] = self._p1_act
-        else:
-            if self._p1 != "human":
-                act[:12] = self._p1_act
+        if self.p2["policy"] != "human" and self.step_count % self.p2["frameskip"] == 0:
+            self.p2_actions = self.p2["policy"].predict(self.p2_obs)[0]
+        keyboard_actions[12:] = self.p2_actions
 
-        if self._steps % self._p2_frameskip == 0:
-            self._p2_frame = self._p2_env.observation(main_frame)
-            if self._p2 != "human":
-                self._p2_act = self._p2.predict(self._p2_frame)[0]
-                act[12:] = self._p2_act
-        else:
-            if self._p2 != "human":
-                act[12:] = self._p2_act
+        return keyboard_actions
 
-        # Make step
-        _, _, done, info = self._env.step(act)
-
-        # Render img
-        main_img = Image.fromarray(main_frame)
-        p1_img = self._get_player_img(self._p1_frame)
-        p2_img = self._get_player_img(self._p2_frame)
+    def _get_full_image(self, obs, info, act):
+        main_img = Image.fromarray(obs)
+        p1_img = self._get_player_img(self.p1_obs)
+        p2_img = self._get_player_img(self.p2_obs)
 
         img = self._get_concat_h(p1_img, main_img)
         img = self._get_concat_h(img, p2_img)
@@ -276,25 +145,21 @@ class InteractiveEnvRecorder(RealTimeVideoPlayer):
         info_img = self._get_concat_h(action_info_img, info_img)
         img = self._get_concat_v(img, info_img)
 
-        # Final output
-        self._steps += 1
-        image, sound = np.array(img), self._env.em.get_audio()[:, 0]
+        return cv2.resize(np.array(img), self.win_size)
 
-        # Save for recording if needed
-        if self._record_output_path:
-            self._images.append(image)
-            self._sounds = np.append(self._sounds, sound)
+    @staticmethod
+    def _get_concat_h(im1, im2):
+        dst = Image.new('RGB', (im1.width + im2.width, max(im1.height, im2.height)))
+        dst.paste(im1, (0, 0))
+        dst.paste(im2, (im1.width, 0))
+        return dst
 
-        # Decide whether to close
-        if self._close_after_done and done:
-            self._should_be_closed = True
-
-        if self._should_be_closed:
-            if self._n_frames_to_close_left == 0:
-                self.on_close()
-            self._n_frames_to_close_left -= 1
-
-        return image, sound
+    @staticmethod
+    def _get_concat_v(im1, im2):
+        dst = Image.new('RGB', (max(im1.width, im2.width), im1.height + im2.height))
+        dst.paste(im1, (0, 0))
+        dst.paste(im2, (0, im1.height))
+        return dst
 
     def _get_action_info_img(self, act):
         text_img = Image.new('RGB', (275, 50))
@@ -332,8 +197,8 @@ class InteractiveEnvRecorder(RealTimeVideoPlayer):
             return s
 
         txt = f'    {" ".join(buttons)}\n' \
-              f'P1:{vec_to_str([act[self._buttons.index(k)] for k in buttons])}\n' \
-              f'P2:{vec_to_str([act[self._buttons.index(k) + 12] for k in buttons])}'
+              f'P1:{vec_to_str([act[self.buttons.index(k)] for k in buttons])}\n' \
+              f'P2:{vec_to_str([act[self.buttons.index(k) + 12] for k in buttons])}'
         d.text((0, 0), txt, fill=(255, 0, 0), font=font)
         return text_img
 
@@ -354,58 +219,27 @@ class InteractiveEnvRecorder(RealTimeVideoPlayer):
         d.text((0, 0), txt, fill=(255, 0, 0), font=font)
         return text_img
 
-    def _keys_to_act(self, keys):
-        inputs_1 = {
-            'BUTTON': 'Z' in keys,
-            'A': 'F' in keys,
-            'B': 'G' in keys,
-            'C': 'H' in keys,
-            'X': 'R' in keys,
-            'Y': 'T' in keys,
-            'Z': 'Y' in keys,
-            'L': 'Z' in keys,
-            'R': 'C' in keys,
-            'UP': 'W' in keys,
-            'DOWN': 'S' in keys,
-            'LEFT': 'A' in keys,
-            'RIGHT': 'D' in keys,
-            'MODE': 'Q' in keys,
-            'SELECT': 'TAB' in keys,
-            'RESET': 'ENTER' in keys,
-            'START': 'E' in keys,
-        }
-        inputs_2 = {
-            'BUTTON': 'Z' in keys,
-            'A': 'NUM_1' in keys,
-            'B': 'NUM_2' in keys,
-            'C': 'NUM_3' in keys,
-            'X': 'NUM_4' in keys,
-            'Y': 'NUM_5' in keys,
-            'Z': 'NUM_6' in keys,
-            'L': 'Z' in keys,
-            'R': 'C' in keys,
-            'UP': 'UP' in keys,
-            'DOWN': 'DOWN' in keys,
-            'LEFT': 'LEFT' in keys,
-            'RIGHT': 'RIGHT' in keys,
-            'MODE': 'NUM_7' in keys,
-            'SELECT': 'TAB' in keys,
-            'RESET': 'ENTER' in keys,
-            'START': 'NUM_9' in keys,
-        }
+    def on_close(self):
+        if self.record_output_path:
+            # Ugly as hell but I don't care, it works :>
+            audio_rate = self.env.em.get_audio_rate()
+            shape = self.images[0].shape[:2]
+            shape = shape[::-1]
+            with tempfile.TemporaryDirectory(dir="/tmp") as temp:
+                writer = cv2.VideoWriter(temp + '/tmp_vid.mp4', cv2.VideoWriter_fourcc(*'mp4v'),
+                                         self.fps, frameSize=shape)
 
-        return np.array([inputs_1[b] for b in self._buttons] + [inputs_2[b] for b in self._buttons])
+                for img in self.images:
+                    img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+                    img = cv2.resize(img, shape, interpolation=cv2.INTER_AREA)
+                    writer.write(img)
 
-    @staticmethod
-    def _get_concat_h(im1, im2):
-        dst = Image.new('RGB', (im1.width + im2.width, max(im1.height, im2.height)))
-        dst.paste(im1, (0, 0))
-        dst.paste(im2, (im1.width, 0))
-        return dst
+                sf.write(temp + '/tmp_sound.flac', self.sounds / (max(self.sounds) * 2), int(audio_rate))
 
-    @staticmethod
-    def _get_concat_v(im1, im2):
-        dst = Image.new('RGB', (max(im1.width, im2.width), im1.height + im2.height))
-        dst.paste(im1, (0, 0))
-        dst.paste(im2, (0, im1.height))
-        return dst
+                cv2.destroyAllWindows()
+                writer.release()
+
+                my_clip = mpe.VideoFileClip(temp + '/tmp_vid.mp4')
+                audio_background = mpe.AudioFileClip(temp + '/tmp_sound.flac')
+                final_clip = my_clip.set_audio(audio_background)
+                final_clip.write_videofile(self.record_output_path, logger=None)
