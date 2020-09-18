@@ -1,5 +1,6 @@
 import gym
 import numpy as np
+from gym import spaces
 
 
 class MK2Wrapper(gym.Wrapper):
@@ -140,3 +141,25 @@ class MaxEpLenWrapper(gym.Wrapper):
         else:
             self._steps += 1
             return o, r, d, i
+
+
+class FramestackWrapper(gym.ObservationWrapper):
+    def __init__(self, env, framestack):
+        super(FramestackWrapper, self).__init__(env)
+        self.framestack = framestack
+        shape = self.observation_space.shape
+        self.observation_space = spaces.Box(
+            low=0, high=255, shape=(framestack,) + shape, dtype=env.observation_space.dtype
+        )
+        self.frames = []
+
+    def reset(self, **kwargs):
+        o = self.env.reset(**kwargs)
+        self.frames = np.array([o] * self.framestack)
+        return self.frames
+
+    def step(self, action):
+        o, r, d, i = self.env.step(action)
+        self.frames = self.frames[1:]
+        self.frames = np.append(self.frames, o)
+        return self.frames, r, d, i
