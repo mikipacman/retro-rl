@@ -37,13 +37,13 @@ def make_experiment_env(params, train):
 
 
 neptune.init("miki.pacman/MK2")
-exp_name = "VeryEasy_Raiden_one_state"
+exp_name = "Framskip_tune_Raiden"
 env_params = {
-    'difficulties': ["VeryEasy"],
+    'difficulties': ["Medium"],
     'arenas': ["DeadPool"],
     'left_players': ["Scorpion"],
     'right_players': ["Raiden"],
-    'state_versions': [0],
+    'state_versions': list(range(16)),
     'actions': "ALL",
     'controllable_players': 1,
     'n_env': 16,
@@ -51,18 +51,18 @@ env_params = {
 }
 learn_params = {
     'total_timesteps': int(2e7),
-    'save_checkpoint_n_epoch': 5,
+    'save_checkpoint_n_epoch': 10,
     'save_checkpoint_google_drive_path': "MK2/saves/",
-    'send_video_n_epoch': 25,
+    'send_video_n_epoch': 50,
+    "algo_name": "PPO",
 }
 wrappers_params = {
-    'frameskip': 10,
+    'frameskip': 5,
     'max_episode_length': None,
 }
 algo_params = {
-    "algo_name": "PPO",
     "learning_rate": 3e-4,
-    "n_steps": 2048,
+    "n_steps": 256,
     "batch_size": 64,
     "n_epochs": 10,
     "gamma": 0.99,
@@ -98,6 +98,6 @@ if __name__ == "__main__":
         video_env_function = lambda: params["env_function"](params, train=False)
         env = SubprocVecEnv([lambda: params["env_function"](params, train=True)
                              for _ in range(params["n_env"])], start_method="forkserver")
-        model = PPO(CnnPolicy, env)
+        model = PPO(CnnPolicy, env, **algo_params)
 
         model.learn(total_timesteps=params["total_timesteps"], callback=get_callbacks(params, exp, video_env_function))

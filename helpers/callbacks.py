@@ -54,7 +54,7 @@ class NeptuneLogger(BaseCallback):
         neptune.send_metric("time/time_elapsed", time.time() - context.start_time)
         neptune.send_metric("time/total_timesteps", context.num_timesteps)
 
-        rollout_infos = [context.ep_info_buffer[i] for i in range(context.n_envs)]
+        rollout_infos = [context.ep_info_buffer[i] for i in range(min(context.n_envs, len(context.ep_info_buffer)))]
         name_to_key = {
             "rollout/ep_rew": "r",
             "rollout/ep_len": "l",
