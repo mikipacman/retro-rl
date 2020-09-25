@@ -65,11 +65,12 @@ class NeptuneLogger(BaseCallback):
             "rollout/real_ep_len": "steps",
         }
 
-        for k, v in name_to_key.items():
-            self._log_3m(k, self._get_by_key(rollout_infos, v))
+        if len(rollout_infos):
+            for k, v in name_to_key.items():
+                self._log_3m(k, self._get_by_key(rollout_infos, v))
 
-        for k, v in self.logger.get_log_dict().items():
-            neptune.send_metric(k, v)
+            for k, v in self.logger.get_log_dict().items():
+                neptune.send_metric(k, v)
 
         if self._iteration % self._send_video_n_epoch == 0:
             self._generate_eval_video()
