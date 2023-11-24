@@ -17,7 +17,7 @@ Now the best part, gameplays! First one is from the epoch number 0, so the agent
 https://github.com/mikipacman/retro-rl/assets/33525262/50de6e69-9aed-4b95-836b-a2d7c1c28674
 
 
-And in the epoch number 100  `SCORPION WINS!` (Watch with audio, I spent a lot of time on properly rendering these videos)
+And in the epoch number 100 `Scorpion wins with FLAWLESS VICTORY` (Watch with audio, I spent a lot of time on properly rendering these videos)
 
 https://github.com/mikipacman/retro-rl/assets/33525262/be3da388-55eb-49d4-bbc3-a82ecefd35df
 
