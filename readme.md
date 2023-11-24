@@ -11,7 +11,7 @@ Here is a particularly fun run (because succesful). The agent is playing `Mortal
 
 ![image](https://github.com/mikipacman/retro-rl/assets/33525262/bff59445-ed8f-4e97-8cd3-68d680f02453)
 
-Now the best part, gameplays! First one is from the epoch number 0, so the agent fails abviously (we are playing `Scorpion`)
+Now the best part, gameplays! First one is from the epoch number 0, so the agent fails obviously (we are playing `Scorpion`)
 
 
 https://github.com/mikipacman/retro-rl/assets/33525262/50de6e69-9aed-4b95-836b-a2d7c1c28674
