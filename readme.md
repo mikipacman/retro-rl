@@ -8,6 +8,7 @@ selfplay techniques on these envs.
 I played with this repo at the begining of my journey with machine learning, during my first fascination with reinforcement learning. At that time I did not have any reasonable compute so I ran all the experiments on my laptop :D Even if the results were not SOTA it was really fun seeing my agent winning against a computer. 
 
 Here is a particularly fun run (because succesful). The agent is playing `Mortal Kombat II` on `VeryEasy` mode (other cases were to much for my compute). We can see by the reward curve that the agent is in fact learning somehing!
+
 ![image](https://github.com/mikipacman/retro-rl/assets/33525262/bff59445-ed8f-4e97-8cd3-68d680f02453)
 
 Now the best part, gameplays! First one is from the epoch number 0, so the agent fails abviously (we are playing `Scorpion`)
