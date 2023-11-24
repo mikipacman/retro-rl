@@ -4,6 +4,25 @@ gym in order to run a tournament between RL agents trained in retro games enviro
 I'm focusing on fighting games like Street Fighter and Mortal Kombat. I'm planning on testing
 selfplay techniques on these envs.
 
+# Some cool results
+I played with this repo at the begining of my journey with machine learning, during my first fascination with reinforcement learning. At that time I did not have any reasonable compute so I ran all the experiments on my laptop :D Even if the results were not SOTA it was really fun seeing my agent winning against a computer. 
+
+Here is a particularly fun run (because succesful). The agent is playing `Mortal Kombat II` on `VeryEasy` mode (other cases were to much for my compute). We can see by the reward curve that the agent is in fact learning somehing!
+![image](https://github.com/mikipacman/retro-rl/assets/33525262/bff59445-ed8f-4e97-8cd3-68d680f02453)
+
+Now the best part, gameplays! First one is from the epoch number 0, so the agent fails abviously (we are playing `Scorpion`)
+
+
+https://github.com/mikipacman/retro-rl/assets/33525262/50de6e69-9aed-4b95-836b-a2d7c1c28674
+
+
+And in the epoch number 100  `SCORPION WINS!` (Watch with audio, I spent a lot of time on properly rendering these videos)
+
+https://github.com/mikipacman/retro-rl/assets/33525262/be3da388-55eb-49d4-bbc3-a82ecefd35df
+
+
+
+
 # Before you pip install
 ```
 sudo apt-get update
